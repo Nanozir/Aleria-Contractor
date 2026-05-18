@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Btn, Tag, Bar, Confetti } from "./UIComponents";
 
-export default function ElfScenario({ setScreen, notify, stats, setStats }) {
+export default function ElfScenario({ setScreen, notify, stats, setStats, diff }) {
   const playClick = () => { if (window.SFX && window.SFX.click) window.SFX.click(); };
 
   const [phase, setPhase] = useState("intro"); 
@@ -12,20 +12,32 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
   
   const [researchAnnounce, setResearchAnnounce] = useState(null);
   const [genOn, setGenOn] = useState(true);
+  
+  // FIX: Delayed event notice (player can't accidentally dismiss for 2 seconds)
+  const [eventReady, setEventReady] = useState(true);
+  // FIX: Tutorial state
+const [showTutorial, setShowTutorial] = useState(false);
+const [showCitizens, setShowCitizens] = useState(false);
+  // FIX: Persistent maze states per location (no exploration exploit)
+  const [savedMazes, setSavedMazes] = useState({});
 
   // Survival Stats
   const [hp, setHp] = useState(100); 
   const [temp, setTemp] = useState(100);
   const [food, setFood] = useState(100);
   const [energy, setEnergy] = useState(100); 
+  const [morale, setMorale] = useState(70);
+  const [permanentEffects, setPermanentEffects] = useState({ foodConsumption: 0, danger: 0, production: 0, revenge: 0, harshRule: 0, celebrations: 0 });
   
   // Resources & Population
   const [artifacts, setArtifacts] = useState(0);
+  const [ancientCoreFragments, setAncientCoreFragments] = useState(0);
   const [materials, setMaterials] = useState(10);
   const [coal, setCoal] = useState(50); 
   const [rations, setRations] = useState(0); 
   const [iron, setIron] = useState(0); 
   const [manaCrystals, setManaCrystals] = useState(0); 
+  const [frostTitanHearts, setFrostTitanHearts] = useState(0);
   const [meat, setMeat] = useState(0); 
   const [vegetables, setVegetables] = useState(0); 
 
@@ -33,12 +45,14 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
   const [equipment, setEquipment] = useState({ pickaxe: 'none', weapon: 'none', armor: 'none' });
   const [mutationLevel, setMutationLevel] = useState(0); 
   
+  // FIX: Moved these UP so maxFood can read them without crashing!
+  const [ancientEchoes, setAncientEchoes] = useState(0);
+  const [metaUpgrades, setMetaUpgrades] = useState({});
+  
   const [population, setPopulation] = useState(1);
   const [coreLevel, setCoreLevel] = useState(1);
-  const maxPopulation = coreLevel * 10; 
   const [engineers, setEngineers] = useState(0);
   const [citizens, setCitizens] = useState([]);
-  const [showCitizens, setShowCitizens] = useState(false);
   
   // Work Buildings
   const [farms, setFarms] = useState(0);
@@ -47,11 +61,9 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
   const [lodgeLevel, setLodgeLevel] = useState(1);
   const [mines, setMines] = useState(0);
   const [mineLevel, setMineLevel] = useState(1);
+  const [defenseLevel, setDefenseLevel] = useState(0);
+  const maxPopulation = 200;
 
-  // SCALING CAPACITIES
-  const maxHp = 100 + (mutationLevel * 20);
-  const maxHeat = coreLevel * 100;
-  const maxFood = 100 + (farms * 50) + (huntingLodges * 50);
   const [genEfficiency, setGenEfficiency] = useState(0); 
   
   // Story Progression
@@ -59,6 +71,57 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
   const [giantPhase, setGiantPhase] = useState(0); 
   const [capitalPhase, setCapitalPhase] = useState(0);
   const [megaCity, setMegaCity] = useState(false);
+const [worldCore, setWorldCore] = useState({
+  fragments:0,
+  repaired:false,
+  activated:false,
+  ending:null
+});
+
+const OBJECTIVES = [
+ {
+   id:"fragment1",
+   title:"Recover Ancient Core Fragments",
+   progress:ancientCoreFragments,
+   max:25
+ },
+ {
+   id:"mana100",
+   title:"Gather Mana Crystals",
+   progress:manaCrystals,
+   max:100
+ },
+ {
+   id:"titan5",
+   title:"Claim Frost Titan Hearts",
+   progress:frostTitanHearts,
+   max:5
+ },
+ {
+   id:"population50",
+   title:"Grow Population",
+   progress:population,
+   max:50
+ },
+ {
+   id:"morale70",
+   title:"Sustain Morale",
+   progress:morale,
+   max:70
+ },
+ {
+   id:"rebuild",
+   title:"Repair the World Core",
+   progress:worldCore.repaired ? 1 : 0,
+   max:1
+ },
+ {
+   id:"activate",
+   title:"Activate the World Core",
+   progress:worldCore.activated ? 1 : 0,
+   max:1
+ }
+];
   
   // Tech Trees
   const [tech, setTech] = useState({ rations: false, heating: false, tools: false, weapons: false, metallurgy: false, advancedArmory: false, settlement: false, farming: false, mining: false, skyspineHarness: false });
@@ -85,19 +148,44 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
   const [maze, setMaze] = useState(null); 
   const [mazeVictory, setMazeVictory] = useState(false);
   const [expCombat, setExpCombat] = useState(null);
+  const [exploredLandmarks, setExploredLandmarks] = useState(["Frozen Forest"]);
+  const [storyBranches, setStoryBranches] = useState([]);
+  const [citizenEventCooldown, setCitizenEventCooldown] = useState(0);
   
   // GIANT QTE STATE
   const [giantCombat, setGiantCombat] = useState(null);
   const [giantVictory, setGiantVictory] = useState(false);
   const [qte, setQte] = useState(null);
+  const [bossAnim, setBossAnim] = useState(null);
 
   const EXPLORATION_NODES = [
-    { name: "Sector 4 Ruins", dang: 0.3, yld: "mod", theme: "stone", desc: "A buried outpost. Safe.", pool: [{n: "Abyssal Drake", hp: 80}, {n: "Frost Crawler", hp: 60}] },
-    { name: "Frozen Forest", dang: 0.6, yld: "low", theme: "forest", desc: "Overgrown ice flora. Beast territory.", pool: [{n: "Snow Stalker", hp: 100}, {n: "Ice Weaver Spider", hp: 80}] },
-    { name: "Abandoned Factory", dang: 0.6, yld: "mod", theme: "metal", desc: "Old metallurgy plant. High iron yield.", pool: [{n: "Rogue Automaton", hp: 140}, {n: "Scrap Golem", hp: 120}] },
-    { name: "Shattered Spire", dang: 0.8, yld: "high", theme: "arcane", desc: "A crumbling mana-tower. High artifact yield.", pool: [{n: "Arcane Sentinel", hp: 160}, {n: "Mana Wyrm", hp: 110}] },
-    { name: "Blighted Town", dang: 0.95, yld: "high", theme: "corruption", desc: "A corrupted settlement. Extreme hazard.", pool: [{n: "Plague Husk", hp: 130}, {n: "Flesh Amalgam", hp: 200}] }
+    { name: "Frozen Forest", dang: 0.35, weather: "Whiteout gusts", yld: "low", theme: "forest", desc: "Black pines, buried tracks, and animal dens.", branches: ["Beast Nest", "Abandoned Camp", "Frozen Lake", "Hunter Cabin"], unlocks: ["Ruined Factory", "Blighted Town"], travelCost: 1, travelTime: 1, hiddenLoot: "Meat, vegetables, artifacts", landmark: "Hunter Cabin", boss: null, pool: [{n: "Snow Stalker", hp: 100}, {n: "Ice Weaver Spider", hp: 80}] },
+    { name: "Ruined Factory", dang: 0.55, weather: "Metal-rattling crosswinds", yld: "mod", theme: "metal", desc: "Old industry still ticks beneath the ice.", branches: ["Assembly Hall", "Boiler Pit", "Tool Vault", "Crane Spine"], unlocks: ["Shattered Spire", "Deep Ice Caverns"], travelCost: 1, travelTime: 2, hiddenLoot: "Iron, materials, core fragments", landmark: "Tool Vault", boss: "Scrap Colossus", pool: [{n: "Rogue Automaton", hp: 140}, {n: "Scrap Golem", hp: 120}] },
+    { name: "Shattered Spire", dang: 0.75, weather: "Mana static", yld: "high", theme: "arcane", desc: "A broken mana tower throwing violet light into the storm.", branches: ["Mirror Gallery", "Mana Well", "Fallen Observatory", "Spire Crown"], unlocks: ["Ancient Temple"], travelCost: 2, travelTime: 3, hiddenLoot: "Mana crystals, artifacts", landmark: "Mana Well", boss: "Arcane Sentinel Prime", pool: [{n: "Arcane Sentinel", hp: 160}, {n: "Mana Wyrm", hp: 110}] },
+    { name: "Blighted Town", dang: 0.85, weather: "Ash snow", yld: "high", theme: "corruption", desc: "A corrupted settlement where survivors whisper through boarded windows.", branches: ["Market Ruin", "Chapel Cellar", "Collapsed Homes", "Old Gate"], unlocks: ["Titan Graveyard"], travelCost: 2, travelTime: 3, hiddenLoot: "Citizens, food, corruption events", landmark: "Old Gate", boss: "Plague Amalgam", pool: [{n: "Plague Husk", hp: 130}, {n: "Flesh Amalgam", hp: 200}] },
+    { name: "Deep Ice Caverns", dang: 0.9, weather: "Subzero pressure", yld: "high", theme: "stone", desc: "Blue tunnels with ancient machinery frozen into the walls.", branches: ["Crystal Shelf", "Deep Mine", "Thermal Vent", "Silent Shaft"], unlocks: ["Titan Graveyard"], travelCost: 2, travelTime: 4, hiddenLoot: "Coal, mana, titan traces", landmark: "Deep Mine", boss: "Ice Burrower Matriarch", pool: [{n: "Deep Ice Burrower", hp: 180}, {n: "Crystal Maw", hp: 150}] },
+    { name: "Titan Graveyard", dang: 1.05, weather: "Titan storms", yld: "legend", theme: "corruption", desc: "Half-buried giants form a mountain range of dead gods.", branches: ["Rib Canyon", "Heart Vault", "Skull Ridge", "Frozen Arena"], unlocks: ["Ancient Temple"], travelCost: 3, travelTime: 5, hiddenLoot: "Frost Titan Hearts, core fragments", landmark: "Heart Vault", boss: "Frost Titan Remnant", pool: [{n: "Titan Bone Warden", hp: 220}, {n: "Frost Revenant", hp: 190}] },
+    { name: "Ancient Temple", dang: 1.15, weather: "Impossible calm", yld: "legend", theme: "arcane", desc: "The sealed temple around the World Core's old arteries.", branches: ["Pilgrim Steps", "Core Reliquary", "Oracle Ice", "Restoration Gate"], unlocks: [], travelCost: 3, travelTime: 6, hiddenLoot: "Core fragments, mana crystals, endings", landmark: "Restoration Gate", boss: "World Core Guardian", pool: [{n: "Temple Guardian", hp: 240}, {n: "Mana Seraph", hp: 210}] }
   ];
+
+  const META_UPGRADES = [
+    { id: "generatorMemory", name: "Generator Memory", cost: 3, desc: "+5 starting heat." },
+    { id: "efficientSurvival", name: "Efficient Survival", cost: 4, desc: "+10 food capacity at start." },
+    { id: "hunterInstinct", name: "Hunter Instinct", cost: 5, desc: "+5% hunting success." },
+    { id: "titanKnowledge", name: "Titan Knowledge", cost: 6, desc: "+5% boss accuracy." },
+    { id: "ancientEngineering", name: "Ancient Engineering", cost: 4, desc: "+10 materials at start." }
+  ];
+
+  // SCALING CAPACITIES & MULTIPLIERS
+  const maxHp = 100 + (mutationLevel * 20);
+  const maxHeat = coreLevel * 100;
+  const isMetaDisabled = diff?.id === "hard" || diff?.id === "insanity";
+  const maxFood = 100 + (farms * 50) + (huntingLodges * 50) + Math.floor(population * 5) + (!isMetaDisabled && metaUpgrades.efficientSurvival ? 10 : 0);
+  const foodConsumptionMultiplier = 1 + Math.floor((population - 1) / 10) * 0.5;
+
+  const moraleBand = morale >= 90 ? "inspired" : morale >= 70 ? "steady" : morale >= 40 ? "strained" : morale >= 20 ? "mutinous" : "collapse";
+  const productionMult = (morale >= 90 ? 1.25 : morale >= 40 ? 1 : morale >= 20 ? 0.9 : 0.75) + (permanentEffects.production || 0);
+  const moraleBossBonus = morale >= 90 ? 10 : morale >= 70 ? 0 : morale >= 40 ? -5 : -15;
 
   const MAZE_THEMES = {
     stone: { floor: "#2a2a35", wall: "#151515", glow: "none", title: "#87cefa" },
@@ -108,9 +196,49 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
   };
 
   const addLog = (msg, type = "info") => setLog(prev => [...prev.slice(-49), { msg, type, id: Date.now() + Math.random() }]);
+  const changeMorale = (amount, reason) => {
+    setMorale(m => Math.max(0, Math.min(100, m + amount)));
+    if (reason) addLog(`${reason} (${amount > 0 ? "+" : ""}${amount} morale)`, amount >= 0 ? "heal" : "dmg");
+  };
+
+  const addPermanentEffect = (key, amount) => setPermanentEffects(prev => ({ ...prev, [key]: (prev[key] || 0) + amount }));
+  const addBranch = (branch) => setStoryBranches(prev => prev.includes(branch) ? prev : [...prev, branch]);
+
+  const gainEchoes = (amount) => {
+    if (isMetaDisabled || amount <= 0) return;
+    setAncientEchoes(e => {
+      const next = e + amount;
+      localStorage.setItem("aleria_elf_meta", JSON.stringify({ echoes: next, upgrades: metaUpgrades }));
+      return next;
+    });
+  };
+
+  const buyMetaUpgrade = (upgrade) => {
+    if (isMetaDisabled || metaUpgrades[upgrade.id] || ancientEchoes < upgrade.cost) return;
+    const nextEchoes = ancientEchoes - upgrade.cost;
+    const nextUpgrades = { ...metaUpgrades, [upgrade.id]: true };
+    setAncientEchoes(nextEchoes);
+    setMetaUpgrades(nextUpgrades);
+    localStorage.setItem("aleria_elf_meta", JSON.stringify({ echoes: nextEchoes, upgrades: nextUpgrades }));
+    addLog(`Ancient Echo memory unlocked: ${upgrade.name}.`, "reward");
+  };
+
+  // FIX: Delayed event notice, but bypassed for fast exploration encounters!
+  useEffect(() => {
+    if (activeEvent) {
+      if (activeEvent.fast) {
+        setEventReady(true);
+      } else {
+        setEventReady(false);
+        const t = setTimeout(() => setEventReady(true), 2000);
+        return () => clearTimeout(t);
+      }
+    }
+  }, [activeEvent]);
 
   const generateCitizen = () => {
     const names = ["Alion", "Lya", "Aelen", "Halmar", "Sari", "Felan", "Anya", "Cori", "Elena", "Riel", "Erius", "Zane", "Ilana", "Myr", "Lorin", "Sylas", "Cal"];
+    const traitPool = ["brave", "loyal", "greedy", "lazy", "intelligent", "aggressive", "compassionate"];
     const roll = Math.random();
     let skills = { farm: 1, hunt: 1, heat: 1, mine: 1 };
     if (roll < 0.05) skills = { farm: 3, hunt: 3, heat: 3, mine: 3 }; 
@@ -118,8 +246,22 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
     else if (roll < 0.55) skills = { farm: 1, hunt: 3, heat: 1, mine: 1 }; 
     else if (roll < 0.80) skills = { farm: 1, hunt: 1, heat: 1, mine: 3 }; 
     else skills = { farm: 1, hunt: 1, heat: 3, mine: 1 }; 
-    return { id: Date.now() + Math.random(), name: names[Math.floor(Math.random() * names.length)], age: 18 + Math.floor(Math.random() * 45), skills: skills, job: 'unassigned' };
+    const traits = [traitPool[Math.floor(Math.random() * traitPool.length)]];
+    if (Math.random() < 0.25) traits.push(traitPool.filter(t => t !== traits[0])[Math.floor(Math.random() * (traitPool.length - 1))]);
+    return { id: Date.now() + Math.random(), name: names[Math.floor(Math.random() * names.length)], age: 18 + Math.floor(Math.random() * 45), skills: skills, job: 'unassigned', traits, relationship: 50, resentment: 0 };
   };
+
+  useEffect(() => {
+    try {
+      const savedMeta = JSON.parse(localStorage.getItem("aleria_elf_meta") || "{}");
+      setAncientEchoes(savedMeta.echoes || 0);
+      setMetaUpgrades(savedMeta.upgrades || {});
+      if (!isMetaDisabled) {
+        if (savedMeta.upgrades?.generatorMemory) setTemp(t => Math.min(maxHeat, t + 5));
+        if (savedMeta.upgrades?.ancientEngineering) setMaterials(m => m + 10);
+      }
+    } catch(e) {}
+  }, []);
 
   useEffect(() => { if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight; }, [log]);
 
@@ -156,9 +298,9 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
       try {
         const data = JSON.parse(saved);
         if (data.phase && !["dead", "giant_cutscene", "victory_anim"].includes(data.phase)) setPhase(data.phase);
-        setTemp(data.temp ?? 100); setFood(data.food ?? 100); setEnergy(data.energy ?? 100); setHp(data.hp ?? 100);
-        setArtifacts(data.artifacts ?? 0); setMaterials(data.materials ?? 10); setCoal(data.coal ?? 50); 
-        setRations(data.rations ?? 0); setIron(data.iron ?? 0); setManaCrystals(data.manaCrystals ?? 0);
+        setTemp(data.temp ?? 100); setFood(data.food ?? 100); setEnergy(data.energy ?? 100); setHp(data.hp ?? 100); setMorale(data.morale ?? 70);
+        setArtifacts(data.artifacts ?? 0); setAncientCoreFragments(data.ancientCoreFragments ?? data.worldCore?.fragments ?? 0); setMaterials(data.materials ?? 10); setCoal(data.coal ?? 50); 
+        setRations(data.rations ?? 0); setIron(data.iron ?? 0); setManaCrystals(data.manaCrystals ?? 0); setFrostTitanHearts(data.frostTitanHearts ?? 0);
         setMeat(data.meat ?? 0); setVegetables(data.vegetables ?? 0);
         if (data.equipment) setEquipment(data.equipment);
         setPopulation(data.population ?? 1); setCoreLevel(data.coreLevel ?? 1); setEngineers(data.engineers ?? 0);
@@ -169,22 +311,30 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
         setTownProgress(data.townProgress ?? 0); setGiantPhase(data.giantPhase ?? 0); setGenOn(data.genOn ?? true);
         if (data.tech) setTech(prev => ({ ...prev, ...data.tech })); if (data.advTech) setAdvTech(prev => ({...prev, ...data.advTech}));
         if (data.log) setLog(data.log); if (data.clearedNodes) setClearedNodes(data.clearedNodes); if (data.citizens) setCitizens(data.citizens);
+        if (data.savedMazes) setSavedMazes(data.savedMazes);
+        if (data.exploredLandmarks) setExploredLandmarks(data.exploredLandmarks);
+        if (data.permanentEffects) setPermanentEffects(prev => ({ ...prev, ...data.permanentEffects }));
+        if (data.storyBranches) setStoryBranches(data.storyBranches);
+        if (data.worldCore) setWorldCore(prev => ({ ...prev, ...data.worldCore }));
       } catch(e) {}
     }
   }, []);
 
   useEffect(() => {
     if (["intro", "victory", "dead", "giant_cutscene", "victory_anim"].includes(phase)) return; 
-    const data = { phase, temp, food, energy, hp, artifacts, materials, coal, rations, iron, manaCrystals, meat, vegetables, equipment, population, coreLevel, engineers, genEfficiency, mutationLevel, farms, farmLevel, defenseLevel, mines, mineLevel, huntingLodges, lodgeLevel, townProgress, giantPhase, tech, advTech, log, clearedNodes, citizens, genOn }; 
+    const data = { phase, temp, food, energy, hp, morale, artifacts, ancientCoreFragments, frostTitanHearts, materials, coal, rations, iron, manaCrystals, meat, vegetables, equipment, population, coreLevel, engineers, genEfficiency, mutationLevel, farms, farmLevel, defenseLevel, mines, mineLevel, huntingLodges, lodgeLevel, townProgress, giantPhase, tech, advTech, log, clearedNodes, citizens, genOn, savedMazes, exploredLandmarks, permanentEffects, storyBranches, worldCore }; 
     localStorage.setItem("aleria_elf_save", JSON.stringify(data));
-  }, [phase, temp, food, energy, hp, artifacts, materials, coal, rations, iron, manaCrystals, meat, vegetables, equipment, population, coreLevel, engineers, genEfficiency, mutationLevel, farms, farmLevel, defenseLevel, mines, mineLevel, huntingLodges, lodgeLevel, townProgress, giantPhase, tech, advTech, log, clearedNodes, citizens, genOn]);
+  }, [phase, temp, food, energy, hp, morale, artifacts, ancientCoreFragments, frostTitanHearts, materials, coal, rations, iron, manaCrystals, meat, vegetables, equipment, population, coreLevel, engineers, genEfficiency, mutationLevel, farms, farmLevel, defenseLevel, mines, mineLevel, huntingLodges, lodgeLevel, townProgress, giantPhase, tech, advTech, log, clearedNodes, citizens, genOn, savedMazes, exploredLandmarks, permanentEffects, storyBranches, worldCore]);
 
   // --- STORY PROGRESSION LISTENER ---
   useEffect(() => {
     if (!tech.settlement || phase !== "outpost" || activeEvent) return;
     if (townProgress >= 20 && giantPhase === 0) { setPhase("giant_cutscene"); setAnimStep(0); }
+    else if (townProgress > 3 && townProgress % 7 === 0 && citizenEventCooldown !== townProgress && population >= 3) { setCitizenEventCooldown(townProgress); triggerCitizenPersonalEvent(); }
+    // FIX: Trigger random civilian/refugee/bandit events periodically once settled (every ~5 actions)
+    else if (townProgress > 5 && townProgress % 5 === 0 && !activeEvent && population >= 5) triggerEndlessEvent();
     else if (phase === "endless" && townProgress % 3 === 0 && !activeEvent) triggerEndlessEvent();
-  }, [townProgress, tech.settlement, phase, activeEvent, giantPhase, temp, food, coal]);
+  }, [townProgress, tech.settlement, phase, activeEvent, giantPhase, temp, food, coal, citizenEventCooldown, population]);
 
   // --- SEQUENCERS ---
   useEffect(() => {
@@ -314,18 +464,25 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
   };
 
   const applyDecay = (foodLoss, energyLoss) => {
+    if (megaCity) return; // FIX: The Mega-City is fully automated. Stop resource decay!
     let fYield = 0, hYield = 0, htYield = 0, cYield = 0, iYield = 0;
     const miners = citizens.filter(c => c.job === 'mine');
     
     citizens.forEach(c => {
-       if (c.job === 'farm') fYield += (c.skills?.farm || 1) * (2 + farmLevel);
-       if (c.job === 'hunt') hYield += (c.skills?.hunt || 1) * (3 + lodgeLevel);
+       const traitMult = c.traits?.includes("lazy") ? 0.85 : c.traits?.includes("loyal") ? 1.08 : 1;
+       if (c.job === 'farm') fYield += (c.skills?.farm || 1) * (2 + farmLevel) * traitMult;
+       if (c.job === 'hunt') hYield += (c.skills?.hunt || 1) * (3 + lodgeLevel) * traitMult;
        if (c.job === 'mine') {
-          cYield += (c.skills?.mine || 1) * (2 + mineLevel);
+          cYield += (c.skills?.mine || 1) * (2 + mineLevel) * traitMult;
           if (Math.random() < 0.3) iYield += 1; 
        }
-       if (c.job === 'heat' && genOn) htYield += (c.skills?.heat || 1) * 3;
+       if (c.job === 'heat' && genOn) htYield += (c.skills?.heat || 1) * 3 * traitMult;
     });
+
+    fYield = Math.floor(fYield * productionMult);
+    hYield = Math.floor(hYield * productionMult);
+    htYield = Math.floor(htYield * productionMult);
+    cYield = Math.floor(cYield * productionMult);
 
     let recipeBonus = 0;
     if (fYield > 0 && hYield > 0) recipeBonus = Math.floor((fYield + hYield) * 0.3); 
@@ -340,6 +497,7 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
          if (deadMiner) {
            setCitizens(prev => prev.filter(c => c.id !== deadMiner.id));
            setPopulation(p => Math.max(1, p - 1));
+           changeMorale(-8, `${deadMiner.name}'s death shook the settlement.`);
            addLog(`Cave-in at the mine! ${deadMiner.name} was crushed.`, "dmg");
            if (window.SFX && window.SFX.shatter) window.SFX.shatter();
          }
@@ -354,7 +512,8 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
     if (iYield > 0) setIron(i => i + iYield);
     
     setFood(f => {
-      const baseLoss = Math.max(1, (foodLoss + popDrain) - mutResist);
+      // FIX: Food consumption doubles every 5 civilians
+      const baseLoss = Math.max(1, ((foodLoss + popDrain) * (foodConsumptionMultiplier + (permanentEffects.foodConsumption || 0))) - mutResist);
       const nf = Math.min(maxFood, Math.max(0, f - baseLoss + fYield + hYield + recipeBonus));
       if (nf <= 0 && phase !== "endless") handleDeath("Starvation claimed you before the frost could.");
       else if (nf <= 0 && phase === "endless") handleDeath("The city starved. The citizens turned on you in a bloody riot.");
@@ -370,9 +529,58 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
        addLog(recipeBonus > 0 ? `Citizens gathered resources. (+${recipeBonus} Food${yieldStr})` : `Citizens gathered supplies. (${yieldStr.trim()})`, "heal");
     }
     if (tech.settlement) setTownProgress(p => p + 1); 
+    if (tech.settlement && morale <= 19 && Math.random() < 0.08) handleDeath("Morale collapsed into riots, desertions, and murder.");
+    else if (tech.settlement && morale <= 39 && Math.random() < 0.12) {
+      setMaterials(m => Math.max(0, m - 5));
+      addLog("Low morale sparked theft and job refusals. Lost 5 Materials.", "dmg");
+    }
+    else if (tech.settlement && morale >= 90 && Math.random() < 0.06) {
+      setFood(f => Math.min(maxFood, f + 10));
+      addLog("A celebration lifted spirits and shared food stores.", "heal");
+    }
+  };
+
+  const bossTargets = [
+    { id: "head", label: "Head", base: 25, mult: 2.2, effect: "Critical damage" },
+    { id: "chest", label: "Chest", base: 80, mult: 1, effect: "Reliable damage" },
+    { id: "leftArm", label: "Left Arm", base: 50, mult: 0.85, effect: "Can disable attacks" },
+    { id: "rightArm", label: "Right Arm", base: 50, mult: 0.85, effect: "Can disable attacks" },
+    { id: "leftLeg", label: "Left Leg", base: 65, mult: 0.75, effect: "Can slow giant" },
+    { id: "rightLeg", label: "Right Leg", base: 65, mult: 0.75, effect: "Can slow giant" }
+  ];
+
+  const fireAtGiantTarget = (target) => {
+    if (!giantCombat || qte || giantVictory) return;
+    playClick();
+    const weaponAccuracy = equipment.weapon === "mana_rifle" ? 15 : equipment.weapon === "scrap_blade" ? 5 : 0;
+    const skillBonus = Math.min(20, citizens.filter(c => c.job === "hunt").reduce((sum, c) => sum + (c.skills?.hunt || 1), 0));
+    const metaBonus = !isMetaDisabled && metaUpgrades.titanKnowledge ? 5 : 0;
+    const bossEvasion = giantCombat.phase === 3 ? 18 : giantCombat.phase === 2 ? 10 : 5;
+    const finalChance = Math.max(5, Math.min(95, target.base + weaponAccuracy + skillBonus + moraleBossBonus + metaBonus - bossEvasion));
+    const hit = Math.random() * 100 < finalChance;
+    setBossAnim(hit ? "hit" : "miss");
+    setTimeout(() => setBossAnim(null), 450);
+    setGiantCombat(gc => {
+      const phase = gc.hp < gc.maxHp * 0.33 ? 3 : gc.hp < gc.maxHp * 0.66 ? 2 : 1;
+      let n = { ...gc, phase };
+      if (hit) {
+        let dmg = Math.floor((80 + Math.random() * 45 + skillBonus * 2) * target.mult);
+        if (advTech.exoStim) dmg = Math.floor(dmg * 1.5);
+        if (target.id.includes("Arm") && Math.random() < 0.35) n.disabledArm = true;
+        if (target.id.includes("Leg") && Math.random() < 0.4) n.slowed = true;
+        n.hp = gc.hp - dmg;
+        n.logs = [...n.logs.slice(-5), {msg: `${target.label} hit for ${dmg} DMG. ${target.effect}.`, type: 'reward', id: Date.now()}];
+        if (n.hp <= 0) setGiantVictory(true);
+      } else {
+        n.logs = [...n.logs.slice(-5), {msg: `Shot missed the ${target.label}. Final chance was ${finalChance}%.`, type: 'dmg', id: Date.now()}];
+      }
+      return n;
+    });
+    if (!hit && Math.random() < 0.35) setTimeout(triggerNextQte, 350);
   };
 
   const handleDeath = (reason) => { 
+    gainEchoes(Math.max(1, Math.floor((townProgress + ancientCoreFragments + frostTitanHearts * 3) / 12)));
     setPhase("dead"); setDeathReason(reason); addLog(reason, "dmg"); localStorage.removeItem("aleria_elf_save"); 
     const r = reason.toLowerCase();
     if (r.includes("froze") || r.includes("frozen") || r.includes("starvation")) { if (window.SFX && window.SFX.frozen) window.SFX.frozen(); } 
@@ -406,6 +614,7 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
       setActiveEvent({
         title: "Hostile Encounter",
         desc: `A terrifying ${e.n} blocks your path in the snow!`,
+        fast: true, //
         choices: [
           { label: "Engage in Combat", req: true, color: "normal", action: () => { 
              playClick(); setActiveEvent(null);
@@ -440,22 +649,68 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
     }
   };
 
+  const triggerCitizenPersonalEvent = () => {
+    if (!tech.settlement || citizens.length === 0) return false;
+    const citizen = citizens[Math.floor(Math.random() * citizens.length)];
+    const wish = [
+      {
+        title: `${citizen.name} wants to become a hunter`,
+        desc: `${citizen.name} has watched the hunting parties leave the gates and asks for a real weapon. Traits: ${(citizen.traits || []).join(", ") || "none"}.`,
+        choices: [
+          { label: "Allow it (+Hunt skill, +5 Morale)", req: true, color: "normal", action: () => { playClick(); setCitizens(prev => prev.map(c => c.id === citizen.id ? { ...c, job: "hunt", skills: { ...c.skills, hunt: Math.min(5, (c.skills?.hunt || 1) + 1) }, relationship: (c.relationship || 50) + 10 } : c)); changeMorale(5, `${citizen.name} found purpose.`); setActiveEvent(null); } },
+          { label: "Refuse (-5 Morale, resentment chance)", req: true, color: "danger", action: () => { playClick(); setCitizens(prev => prev.map(c => c.id === citizen.id ? { ...c, resentment: (c.resentment || 0) + 15, relationship: (c.relationship || 50) - 10 } : c)); changeMorale(-5, `${citizen.name}'s request was refused.`); setActiveEvent(null); } },
+          { label: "Train personally (50% elite / 50% injury)", req: energy >= 20, color: "normal", action: () => { playClick(); setEnergy(e => Math.max(0, e - 20)); if (Math.random() < 0.5) { setCitizens(prev => prev.map(c => c.id === citizen.id ? { ...c, job: "hunt", traits: [...new Set([...(c.traits || []), "brave"])], skills: { ...c.skills, hunt: 5 }, relationship: (c.relationship || 50) + 20 } : c)); changeMorale(8, `${citizen.name} became an elite hunter.`); } else { setHp(h => Math.max(1, h - 10)); changeMorale(-3, `${citizen.name} was injured during training.`); } setActiveEvent(null); } }
+        ]
+      },
+      {
+        title: `${citizen.name} asks for family rations`,
+        desc: `A private request reaches your desk. Compassion could build loyalty, but the stores are watched by hungry eyes.`,
+        choices: [
+          { label: "Grant extra food (-15 Food, +relationship)", req: food >= 15, color: "normal", action: () => { playClick(); setFood(f => f - 15); setCitizens(prev => prev.map(c => c.id === citizen.id ? { ...c, relationship: (c.relationship || 50) + 20 } : c)); changeMorale(4, "A humane exception spread through the quarters."); setActiveEvent(null); } },
+          { label: "Make it public ration reform (-30 Food, +10 Morale)", req: food >= 30, color: "normal", action: () => { playClick(); setFood(f => f - 30); changeMorale(10, "Ration reform calmed the settlement."); addPermanentEffect("production", 0.02); setActiveEvent(null); } },
+          { label: "Refuse as favoritism (-relationship)", req: true, color: "danger", action: () => { playClick(); setCitizens(prev => prev.map(c => c.id === citizen.id ? { ...c, relationship: (c.relationship || 50) - 20, resentment: (c.resentment || 0) + 10 } : c)); changeMorale(-2, "The refusal was lawful, but cold."); setActiveEvent(null); } }
+        ]
+      },
+      {
+        title: `${citizen.name} proposes a festival`,
+        desc: `The settlement wants one night with music instead of storm alarms. Work will slow, but people might remember why they endure.`,
+        choices: [
+          { label: "Hold festival (-20 Food, +15 Morale)", req: food >= 20, color: "normal", action: () => { playClick(); setFood(f => f - 20); addPermanentEffect("celebrations", 1); changeMorale(15, "The festival lit the frozen streets."); setActiveEvent(null); } },
+          { label: "Let workers self-organize (+5 Morale, -5 Mat)", req: materials >= 5, color: "normal", action: () => { playClick(); setMaterials(m => m - 5); changeMorale(5, "A small celebration survived on scraps."); setActiveEvent(null); } },
+          { label: "Ban distractions (+danger, -10 Morale)", req: true, color: "danger", action: () => { playClick(); addPermanentEffect("danger", 0.03); addPermanentEffect("harshRule", 1); changeMorale(-10, "The ban hardened the city."); setActiveEvent(null); } }
+        ]
+      }
+    ];
+    setActiveEvent(wish[Math.floor(Math.random() * wish.length)]);
+    return true;
+  };
+
   const triggerEndlessEvent = () => {
     const events = [];
     if ((temp/maxHeat) < 0.4) events.push({
         title: "The Cold is Unbearable",
         desc: "A delegation of frozen citizens marches to the core. 'We are freezing in our beds, Overseer. Do something!'",
         choices: [
-            { label: "Stoke the Core (-20 Coal)", req: coal >= 20, color: "normal", action: () => { playClick(); setCoal(c=>c-20); setTemp(t=>Math.min(maxHeat, t+40)); addLog("You placated the freezing citizens.", "heal"); setActiveEvent(null); setTownProgress(p=>p+1); } },
-            { label: "Conserve Fuel (Ignore them)", req: true, color: "danger", action: () => { playClick(); setCitizens(prev => prev.slice(0, -1)); setPopulation(p => Math.max(1, p-1)); addLog("A citizen froze to death in protest.", "dmg"); setActiveEvent(null); setTownProgress(p=>p+1); } }
+            { label: "Stoke the Core (-20 Coal, +8 Morale)", req: coal >= 20, color: "normal", action: () => { playClick(); setCoal(c=>c-20); setTemp(t=>Math.min(maxHeat, t+40)); changeMorale(8, "You placated the freezing citizens."); setActiveEvent(null); setTownProgress(p=>p+1); } },
+            { label: "Conserve Fuel (death, -15 Morale)", req: true, color: "danger", action: () => { playClick(); setCitizens(prev => prev.slice(0, -1)); setPopulation(p => Math.max(1, p-1)); changeMorale(-15, "A citizen froze to death in protest."); addBranch("cold_policy"); setActiveEvent(null); setTownProgress(p=>p+1); } }
         ]
     });
     if ((food/maxFood) < 0.4) events.push({
         title: "Ration Protests",
         desc: "Hunger drives the workers to strike. They demand access to the emergency stockpiles.",
         choices: [
-            { label: "Distribute Reserves (-20 Food)", req: food >= 20, color: "normal", action: () => { playClick(); setFood(f=>f-20); addLog("You fed the protesters to stop the strike.", "heal"); setActiveEvent(null); setTownProgress(p=>p+1); } },
-            { label: "Disperse them by force", req: true, color: "danger", action: () => { playClick(); setEngineers(e => Math.max(0, e-1)); setCitizens(prev => prev.slice(0, -1)); setPopulation(p => Math.max(1, p-1)); addLog("Guards dispersed the crowd. Casualties occurred.", "dmg"); setActiveEvent(null); setTownProgress(p=>p+1); } }
+            { label: "Distribute Reserves (-20 Food, +8 Morale)", req: food >= 20, color: "normal", action: () => { playClick(); setFood(f=>f-20); changeMorale(8, "You fed the protesters to stop the strike."); setActiveEvent(null); setTownProgress(p=>p+1); } },
+            { label: "Disperse them by force (-20 Morale)", req: true, color: "danger", action: () => { playClick(); setEngineers(e => Math.max(0, e-1)); setCitizens(prev => prev.slice(0, -1)); setPopulation(p => Math.max(1, p-1)); addPermanentEffect("danger", 0.04); changeMorale(-20, "Guards dispersed the crowd. Casualties occurred."); setActiveEvent(null); setTownProgress(p=>p+1); } }
+        ]
+    });
+    
+    // FIX: Civilian problem scenarios
+    events.push({
+        title: "Citizen Dispute",
+        desc: "Two of your citizens fight over a scrap of cloth. If you don't act, others may turn on each other too.",
+        choices: [
+            { label: "Mediate fairly (+5 Morale, +1 Town progress)", req: true, color: "normal", action: () => { playClick(); changeMorale(5, "You resolved the dispute fairly."); setTownProgress(p=>p+2); setActiveEvent(null); } },
+            { label: "Side with the stronger (+5 Mat, future resentment)", req: true, color: "danger", action: () => { playClick(); setMaterials(m => m+5); addPermanentEffect("danger", 0.02); changeMorale(-4, "Justice bent toward power."); setActiveEvent(null); setTownProgress(p=>p+1); } }
         ]
     });
     
@@ -463,10 +718,72 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
         title: "Refugees at the Gate",
         desc: "A desperate group of survivors from a fallen settlement begs to enter the city.",
         choices: [
-            { label: "Let them in (-30 Food)", req: food >= 30, color: "normal", action: () => { playClick(); setFood(f=>f-30); setPopulation(p=>p+5); setCitizens(prev => [...prev, ...Array.from({length: 5}, () => generateCitizen())]); addLog("You welcomed the refugees.", "heal"); setActiveEvent(null); setTownProgress(p=>p+1); } },
-            { label: "Turn them away", req: true, color: "danger", action: () => { playClick(); addLog("You left them to the frost. The citizens watched in horror.", "info"); setActiveEvent(null); setTownProgress(p=>p+1); } }
+            { label: "Accept everyone (+5 Pop, +10 Morale, permanent food demand)", req: food >= 30 && population + 5 <= maxPopulation, color: "normal", action: () => { playClick(); setFood(f=>f-30); setPopulation(p=>p+5); setCitizens(prev => [...prev, ...Array.from({length: 5}, () => generateCitizen())]); addPermanentEffect("foodConsumption", 0.2); changeMorale(10, "You welcomed every refugee."); addBranch("open_gate"); setActiveEvent(null); setTownProgress(p=>p+1); } },
+            { label: "Only skilled workers (+2 Eng, +2 Hunters, +5 Morale)", req: population + 4 <= maxPopulation, color: "normal", action: () => { playClick(); const newHunters = Array.from({length: 2}, () => ({ ...generateCitizen(), job: "hunt", skills: { farm: 1, hunt: 3, heat: 1, mine: 1 }, traits: ["brave"] })); setEngineers(e=>e+2); setPopulation(p=>p+4); setCitizens(prev => [...prev, ...newHunters, ...Array.from({length: 2}, () => ({ ...generateCitizen(), traits: ["intelligent"] }))]); changeMorale(5, "Skilled refugees were admitted."); addBranch("skilled_gate"); setActiveEvent(null); setTownProgress(p=>p+1); } },
+            { label: "Reject them (-15 Morale, revenge chance)", req: true, color: "danger", action: () => { playClick(); addPermanentEffect("revenge", 0.15); changeMorale(-15, "You left them to the frost."); addBranch("closed_gate"); setActiveEvent(null); setTownProgress(p=>p+1); } }
         ]
     });
+    
+    // FIX: Bandit arrival event
+    events.push({
+        title: "Bandits Approach!",
+        desc: "Armed raiders demand a portion of your stores or they'll storm the gates.",
+        choices: [
+            { label: "Pay them off (-15 Mat, -10 Coal, +future danger)", req: materials >= 15 && coal >= 10, color: "normal", action: () => { playClick(); setMaterials(m=>m-15); setCoal(c=>c-10); addPermanentEffect("danger", 0.03); addLog("The bandits left with tribute. They may return.", "info"); setActiveEvent(null); setTownProgress(p=>p+1); } },
+            { label: "Fight back (Risk casualties)", req: true, color: "danger", action: () => { playClick();
+                const huntersCount = citizens.filter(c => c.job === 'hunt').length;
+                const success = Math.random() < (0.4 + huntersCount * 0.1 + (morale >= 90 ? 0.1 : 0));
+                if (success) {
+                  setMaterials(m => m + 25); setIron(i => i + 5);
+                  changeMorale(6, "Your hunters drove off the bandits.");
+                  addLog("Looted their kit!", "reward");
+                } else {
+                  const lost = Math.min(citizens.length, 2 + Math.floor(Math.random() * 3));
+                  setCitizens(prev => prev.slice(0, -lost));
+                  setPopulation(p => Math.max(1, p - lost));
+                  changeMorale(-12, `The bandits killed ${lost} citizens before retreating.`);
+                }
+                setActiveEvent(null); setTownProgress(p=>p+1);
+            }}
+        ]
+    });
+    
+    // FIX: Sickness event
+    if (population >= 10) events.push({
+        title: "Outbreak of Sickness",
+        desc: "A cough spreads through the lower quarters. Without action, it could become a plague.",
+        choices: [
+            { label: "Quarantine the sick (-5 Food, +5 Morale)", req: food >= 5, color: "normal", action: () => { playClick(); setFood(f=>f-5); changeMorale(5, "The sickness was contained."); setTownProgress(p=>p+2); setActiveEvent(null); } },
+            { label: "Do nothing", req: true, color: "danger", action: () => { playClick();
+                const sick = Math.floor(population * 0.2);
+                setCitizens(prev => prev.slice(0, -sick));
+                setPopulation(p => Math.max(1, p - sick));
+                changeMorale(-18, `${sick} citizens died of plague.`);
+                setActiveEvent(null); setTownProgress(p=>p+1);
+            }}
+        ]
+    });
+
+    if (giantPhase >= 1) events.push({
+        title: "Corruption in the Snow",
+        desc: "Black frost grows over the outer pipes. Engineers say it feeds on fear and heat.",
+        choices: [
+            { label: "Purge with mana (-3 Mana, -danger, +Morale)", req: manaCrystals >= 3, color: "normal", action: () => { playClick(); setManaCrystals(m=>m-3); addPermanentEffect("danger", -0.04); changeMorale(7, "The corruption was burned clean."); setActiveEvent(null); setTownProgress(p=>p+1); } },
+            { label: "Harvest it (+2 Fragments, +danger)", req: true, color: "danger", action: () => { playClick(); setAncientCoreFragments(f=>f+2); addPermanentEffect("danger", 0.06); changeMorale(-6, "The harvested corruption whispered through the settlement."); setActiveEvent(null); setTownProgress(p=>p+1); } },
+            { label: "Seal the district (-1 Pop, preserve resources)", req: population > 1, color: "danger", action: () => { playClick(); setCitizens(prev => prev.slice(0, -1)); setPopulation(p => Math.max(1, p-1)); changeMorale(-10, "A district was sealed with people inside."); setActiveEvent(null); setTownProgress(p=>p+1); } }
+        ]
+    });
+
+    if ((permanentEffects.revenge || 0) > 0 && Math.random() < permanentEffects.revenge) events.push({
+        title: "Revenge at the Gate",
+        desc: "Survivors once refused by your city return with stolen rifles and a list of names.",
+        choices: [
+            { label: "Negotiate restitution (-25 Food, -10 Mat)", req: food >= 25 && materials >= 10, color: "normal", action: () => { playClick(); setFood(f=>f-25); setMaterials(m=>m-10); addPermanentEffect("revenge", -0.1); changeMorale(4, "Restitution cooled an old wound."); setActiveEvent(null); setTownProgress(p=>p+1); } },
+            { label: "Ambush them (Hunter check)", req: true, color: "danger", action: () => { playClick(); const power = citizens.filter(c => c.job === "hunt").length * 0.08; if (Math.random() < 0.45 + power) { setIron(i=>i+8); addPermanentEffect("revenge", -0.05); changeMorale(-3, "The ambush worked, but no one celebrated."); } else { const lost = Math.min(citizens.length, 3); setCitizens(prev=>prev.slice(0, -lost)); setPopulation(p=>Math.max(1, p-lost)); changeMorale(-14, "The revenge raid broke through."); } setActiveEvent(null); setTownProgress(p=>p+1); } },
+            { label: "Open the gate and apologize (+Pop, risk theft)", req: population + 3 <= maxPopulation, color: "normal", action: () => { playClick(); setPopulation(p=>p+3); setCitizens(prev=>[...prev, ...Array.from({length:3}, () => generateCitizen())]); setMaterials(m=>Math.max(0, m-15)); addPermanentEffect("revenge", -0.15); changeMorale(8, "The old grievance became new citizens."); setActiveEvent(null); setTownProgress(p=>p+1); } }
+        ]
+    });
+    
     if(events.length > 0) setActiveEvent(events[Math.floor(Math.random() * events.length)]);
   };
 
@@ -500,11 +817,18 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
     if (energy < eCost) return notify("Too exhausted to explore.", "#e85c3a");
     applyDecay(10, eCost);
     const roll = Math.random();
-    if (roll < (tech.tools ? 0.05 : 0.10)) triggerEvent("monster"); 
-    else if (roll < 0.35) triggerEvent("survivor");
-    else if (roll < (tech.tools ? 0.75 : 0.65)) { 
+    // FIX: Early-game "Explore Ruins" has LOW monster chance, scaled by progression
+    const monsterChance = !tech.settlement ? 0.04 : (tech.tools ? 0.08 : 0.12);
+    if (roll < monsterChance) triggerEvent("monster"); 
+    else if (roll < monsterChance + 0.30) triggerEvent("survivor");
+    else if (roll < monsterChance + 0.55) { 
        const found = Math.floor(Math.random() * (tech.tools ? 3 : 2)) + 1; 
        setArtifacts(a => a + found); addLog(`Unearthed ${found} Artifacts.`, "reward"); 
+    } else if (roll < monsterChance + 0.70) {
+       // FIX: Mana acquisition - allow early-game mana finds from ruin exploration
+       const manaFound = Math.floor(Math.random() * 2) + 1;
+       setManaCrystals(m => m + manaFound);
+       addLog(`Recovered ${manaFound} Mana Crystal${manaFound > 1 ? 's' : ''} from a glowing relic.`, "reward");
     } else { 
        const found = Math.floor(Math.random() * 15) + (tech.tools ? 15 : 5); 
        const ironFound = Math.random() < 0.4 ? Math.floor(Math.random() * 5) + 2 : 0;
@@ -535,8 +859,24 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
     playClick();
     if (food < 5) return notify("Too hungry to sleep.", "#e85c3a");
     setEnergy(e => Math.min(100, e + 50));
+    // FIX: Rest also slightly heals HP per problem statement
+    setHp(h => Math.min(maxHp, h + Math.floor(maxHp * 0.15)));
     applyDecay(5, 0); 
-    addLog("Rested near the pipes. (+50 Energy, -5 Food)", "heal");
+    addLog("Rested near the pipes. (+50 Energy, slight HP heal, -5 Food)", "heal");
+  };
+
+
+  // FIX: Eat rations from menu (heal HP + restore food)
+  const eatRation = () => {
+    if (window.SFX && window.SFX.click) window.SFX.click();
+    if (rations < 1) return notify("No rations available.", "#e85c3a");
+    
+    setRations(r => r - 1);
+    setHp(h => Math.min(maxHp, h + 30));
+    setFood(f => Math.min(maxFood, f + 40));
+    
+    addLog("Ate a Travel Ration. (+30 HP, +40 Food)", "heal");
+    if (window.SFX && window.SFX.eat) window.SFX.eat();
   };
 
   const doMine = () => {
@@ -561,6 +901,78 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
     }
   };
 
+  const startDeepMine = () => {
+    playClick();
+    if (energy < 10) return notify("Too exhausted to mine.", "#e85c3a");
+    setActiveEvent({
+      title: "Deep Mine",
+      desc: "The shaft descends below the heated levels. Better coal waits below, along with collapses no one will hear.",
+      fast: true,
+      choices: [
+        { label: "Safe shaft (+20 Coal, 5% collapse)", req: energy >= 10, color: "normal", action: () => resolveRiskAction("mine", 20, 0.05, 10) },
+        { label: "Risky descent (+50 Coal, 20% collapse)", req: energy >= 18, color: "normal", action: () => resolveRiskAction("mine", 50, 0.2, 18) },
+        { label: "Extreme bore (+100 Coal, 40% collapse, rare legendary loot)", req: energy >= 30, color: "danger", action: () => resolveRiskAction("mine", 100, 0.4, 30, true) }
+      ]
+    });
+  };
+
+  const resolveRiskAction = (kind, reward, collapseChance, energyCost, legendary=false) => {
+    playClick();
+    applyDecay(kind === "hunt" ? 0 : 8, energyCost);
+    setActiveEvent(null);
+    const danger = collapseChance + (permanentEffects.danger || 0);
+    if (Math.random() < danger) {
+      const dmg = legendary ? 45 : 25;
+      setHp(h => { const nh = Math.max(0, h - dmg); if (nh <= 0) setTimeout(()=>handleDeath("A high-risk expedition ended under ice and stone."), 500); return nh; });
+      changeMorale(-5, "The risky action went badly.");
+      addLog(`Disaster struck during ${kind}. Took ${dmg} damage.`, "dmg");
+      return;
+    }
+    if (kind === "mine") {
+      setCoal(c => c + reward);
+      if (legendary && Math.random() < 0.25) { setAncientCoreFragments(f => f + 1); addLog("Legendary find: +1 Ancient Core Fragment.", "reward"); }
+      addLog(`Deep Mine success: +${reward} Coal.`, "reward");
+    }
+    if (kind === "ruins") {
+      setArtifacts(a => a + Math.floor(reward / 10));
+      setAncientCoreFragments(f => f + (legendary ? 2 : 1));
+      addLog(`Ruins excavation recovered ancient core material.`, "reward");
+    }
+    if (kind === "hunt") {
+      setFood(f => Math.min(maxFood, f + reward));
+      setMeat(m => m + Math.floor(reward / 4));
+      addLog(`Hunt success: +${reward} Food.`, "heal");
+    }
+  };
+
+  const startRuinsExcavation = () => {
+    playClick();
+    setActiveEvent({
+      title: "Ancient Ruins",
+      desc: "You can scrape the surface, pry open sealed rooms, or break forbidden seals around the old core conduits.",
+      fast: true,
+      choices: [
+        { label: "Safe excavation (+Artifacts, +1 Fragment)", req: energy >= 12, color: "normal", action: () => resolveRiskAction("ruins", 20, 0.05, 12) },
+        { label: "Aggressive excavation (+Artifacts, +1 Fragment, 20% disaster)", req: energy >= 20, color: "normal", action: () => resolveRiskAction("ruins", 35, 0.2, 20) },
+        { label: "Forbidden excavation (+Artifacts, +2 Fragments, 40% disaster)", req: energy >= 35, color: "danger", action: () => resolveRiskAction("ruins", 50, 0.4, 35, true) }
+      ]
+    });
+  };
+
+  const startHuntingChoice = () => {
+    playClick();
+    setActiveEvent({
+      title: "Hunting Grounds",
+      desc: "Tracks split at the snowline. Small prey is reliable. Larger prey could feed the city. Monster tracks lead toward a den.",
+      fast: true,
+      choices: [
+        { label: "Small prey (+25 Food, 5% injury)", req: energy >= 8, color: "normal", action: () => resolveRiskAction("hunt", 25, 0.05, 8) },
+        { label: "Large prey (+60 Food, 20% injury)", req: energy >= 18, color: "normal", action: () => resolveRiskAction("hunt", 60, 0.2 - (!isMetaDisabled && metaUpgrades.hunterInstinct ? 0.05 : 0), 18) },
+        { label: "Monster hunt (+110 Food, 40% injury)", req: energy >= 30 && tech.weapons, color: "danger", action: () => resolveRiskAction("hunt", 110, 0.4 - (!isMetaDisabled && metaUpgrades.hunterInstinct ? 0.05 : 0), 30, true) }
+      ]
+    });
+  };
+
   const stokeGenerator = () => {
     playClick();
     if (coal < 10) return notify("Need 10 Coal.", "#e85c3a");
@@ -575,6 +987,7 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
     setActiveEvent({
       title: "Unstable Relic",
       desc: "Channeling raw mana into an unknown Federation artifact is highly dangerous.",
+      fast: true,
       choices: [
         { label: "Channel into Generator (60% Upgrade / 15% Mutate / 25% Explode)", req: true, color: "normal", action: () => {
             playClick(); setArtifacts(a=>a-1);
@@ -636,16 +1049,29 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
     playClick();
     if (energy < 50 || food < 50) return notify("Need 50 Energy & Food.", "#e85c3a");
     applyDecay(50, 50);
-    setGiantCombat({ hp: 1000, maxHp: 1000, logs: [{msg: "You engage the Skyspine Harness. Prepare to dodge!", type: "sys", id: Date.now()}] });
+    const bossHp = 1000 + (frostTitanHearts * 150) + Math.floor((permanentEffects.danger || 0) * 1000);
+    setGiantCombat({ hp: bossHp, maxHp: bossHp, phase: 1, logs: [{msg: "You engage the Skyspine Harness. Target zones armed. QTE dodges remain active.", type: "sys", id: Date.now()}] });
     setPhase("giant_combat");
     setTimeout(triggerNextQte, 2000);
   };
 
   const travelToNode = (nodeData) => {
     playClick();
-    if (rations < 1) return notify("Need 1 Ration to journey.", "#e85c3a");
-    setRations(r => r - 1);
+    if (rations < nodeData.travelCost) return notify(`Need ${nodeData.travelCost} Ration(s) to journey.`, "#e85c3a");
+    setRations(r => r - nodeData.travelCost);
+    setEnergy(e => Math.max(0, e - nodeData.travelTime * 3));
     if (tech.settlement) setTownProgress(p => p + 1);
+    if (Math.random() < 0.12 + (permanentEffects.danger || 0)) {
+      setTemp(t => Math.max(0, t - 8));
+      addLog(`${nodeData.weather} slowed the expedition. Lost heat on return.`, "dmg");
+    }
+
+    // FIX: If we already explored this node partially (fled), reuse the same maze
+    if (savedMazes[nodeData.name]) {
+      setMaze(savedMazes[nodeData.name]);
+      setPhase("exploring");
+      return;
+    }
 
     const baseMap = [
       [0,0,0,0,1,0,0,0,0,0,0,0],
@@ -667,13 +1093,14 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
       for(let c=0; c<12; c++) {
         if (grid[r][c] === 0 && !(r===0 && c===0) && !(r===11 && c===11)) {
           let rand = Math.random();
-          if (rand < nodeData.dang * 0.15) grid[r][c] = 3; 
+          if (rand < (nodeData.dang + (permanentEffects.danger || 0)) * 0.15) grid[r][c] = 3; 
           else if (rand < 0.15 + (nodeData.dang * 0.1)) grid[r][c] = 2; 
         }
       }
     }
 
-    setMaze({ name: nodeData.name, yieldType: nodeData.yld, theme: nodeData.theme, pool: nodeData.pool, grid: grid, player: {x: 0, y: 0}, logs: [{msg: `Entered ${nodeData.name}. Find the Blue Exit.`, type: "sys", id: Date.now()}] });
+    const newMaze = { name: nodeData.name, yieldType: nodeData.yld, theme: nodeData.theme, pool: nodeData.pool, branches: nodeData.branches, unlocks: nodeData.unlocks, landmark: nodeData.landmark, boss: nodeData.boss, grid: grid, player: {x: 0, y: 0}, logs: [{msg: `Entered ${nodeData.name}. Find the Blue Exit. Weather: ${nodeData.weather}.`, type: "sys", id: Date.now()}] };
+    setMaze(newMaze);
     setPhase("exploring");
   };
 
@@ -690,18 +1117,27 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
 
     if (cell === 4) { 
        if (!clearedNodes.includes(maze.name)) setClearedNodes(prev => [...prev, maze.name]);
+       if (maze.unlocks?.length) setExploredLandmarks(prev => [...new Set([...prev, ...maze.unlocks])]);
+       if (maze.yieldType === "legend") {
+         setAncientCoreFragments(f => f + 3);
+         if (maze.name === "Titan Graveyard") setFrostTitanHearts(h => Math.min(5, h + 1));
+       } else if (maze.yieldType === "high") setAncientCoreFragments(f => f + 1);
+       // FIX: Clear saved maze on completion
+       setSavedMazes(prev => { const np = {...prev}; delete np[maze.name]; return np; });
        setMazeVictory(true);
        setMaze(nextMaze);
        if (window.SFX?.reward) window.SFX.reward();
        return;
     } else if (cell === 2) { 
        newGrid[ny][nx] = 0;
-       const arts = maze.yieldType === "high" ? 2 : 1; const mats = maze.yieldType === "high" ? 15 : 8;
+       const arts = maze.yieldType === "legend" ? 3 : maze.yieldType === "high" ? 2 : 1; const mats = maze.yieldType === "legend" ? 25 : maze.yieldType === "high" ? 15 : 8;
        const ironFound = Math.random() < 0.5 ? Math.floor(Math.random() * 8) + 3 : 0;
-       const manaFound = maze.yieldType === "high" && Math.random() < 0.3 ? Math.floor(Math.random() * 3) + 1 : 0;
+       const manaFound = (maze.yieldType === "high" || maze.yieldType === "legend") && Math.random() < 0.45 ? Math.floor(Math.random() * 3) + 1 : 0;
+       const fragmentFound = (maze.yieldType === "legend" || Math.random() < 0.2) ? 1 : 0;
        setArtifacts(a => a + arts); setMaterials(m => m + mats); 
        if(ironFound) setIron(i=>i+ironFound); if(manaFound) setManaCrystals(m=>m+manaFound);
-       addMazeLog(`Looted ${arts} Art, ${mats} Mat!`, "reward");
+       if(fragmentFound) setAncientCoreFragments(f=>f+fragmentFound);
+       addMazeLog(`Looted ${arts} Art, ${mats} Mat${fragmentFound ? ", 1 Core Fragment" : ""}!`, "reward");
        if (window.SFX?.reward) window.SFX.reward();
     } else if (cell === 3) { 
        newGrid[ny][nx] = 0;
@@ -727,6 +1163,7 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
     } else if (act === "defend") { addLog("You brace yourself, raising your guard.", "sys");
     } else if (act === "flee") {
       addLog("You fled the battle.", "dmg"); setExpCombat(nEc);
+      // FIX: When fleeing combat in maze, return to maze (state already saved in maze state)
       if (maze) setTimeout(() => setPhase("exploring"), 1000); else setTimeout(() => setPhase("outpost"), 1000);
       return;
     }
@@ -827,7 +1264,7 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
                <div style={{ textAlign: "center", animation: "cinFadeIn 1s ease-out" }}>
                  <p style={{ fontSize: 18, lineHeight: 1.6, marginBottom: 30, color: "rgba(255,255,255,0.8)" }}>The journey takes days, pushing through the thickest whiteout you've ever seen. You finally arrive at the decrypted coordinates.<br/><br/>Before you stands a towering megalopolis of pristine obsidian glass and gold, completely untouched by the frost. An immense, humming Aegis Shield covers the entire city like a dome.<br/><br/>The city is alive. You can see the lights. But the enormous Aegis Gate is sealed tight.</p>
                  <div style={{ display: "flex", gap: 20, justifyContent: "center" }}>
-                   <Btn variant="primary" style={{ padding: "15px 30px", fontSize: 16 }} onClick={() => { playClick(); if(manaCrystals >= 10 && equipment.weapon === 'mana_rifle') { setManaCrystals(m=>m-10); setCapitalPhase(1); } else notify("Requires 10 Mana Crystals & Mana Rifle", "#e85c3a"); }}>Overload the Aegis Gate (-10 Mana)</Btn>
+                   <Btn variant="primary" style={{ padding: "15px 30px", fontSize: 16 }} onClick={() => { playClick(); if(artifacts >= 15 && manaCrystals >= 5) { setArtifacts(a=>a-15); setManaCrystals(m=>m-5); setCapitalPhase(1); } else notify("Requires 15 Artifacts & 5 Mana Crystals", "#e85c3a"); }}>Breach the Aegis Gate (-15 Art, -5 Mana)</Btn>
                    <Btn variant="ghost" onClick={() => { playClick(); setPhase("outpost"); setLeftTab("map"); }}>Retreat to Outpost</Btn>
                  </div>
                </div>
@@ -855,6 +1292,39 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
                </div>
              )}
            </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === "ending_choice") {
+    const endings = {
+      escape: { title: "Escape the Planet", desc: "The restored World Core becomes a launch spine. Your people leave the frozen world behind, carrying a seed of Aleria to the stars." },
+      remain: { title: "Remain and Build Civilization", desc: "The Core warms a permanent valley. Roads, schools, gardens, and law rise where only emergency shelters once stood." },
+      ruler: { title: "Become Ruler of the Wasteland", desc: "You bind the storm to your command. The city survives, the giants kneel, and every distant fire learns your banner." }
+    };
+    const selected = worldCore.ending ? endings[worldCore.ending] : null;
+    return (
+      <div style={{ minHeight: "100vh", background: "radial-gradient(circle at 50% 0%, #102335 0%, #05080f 100%)", fontFamily: "var(--font-sans)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+        <div className="frost-panel" style={{ maxWidth: 900, padding: 40, borderRadius: 16, textAlign: "center", borderColor: "#87cefa" }}>
+          {!selected ? (
+            <>
+              <h1 style={{ color: "#87cefa", letterSpacing: 5, margin: "0 0 10px" }}>WORLD CORE RESTORED</h1>
+              <p style={{ color: "rgba(255,255,255,0.7)", marginBottom: 30 }}>The planet waits for your final command.</p>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 15 }}>
+                <Btn variant="primary" onClick={() => { playClick(); setWorldCore(w=>({...w, ending:"escape"})); }}>Escape the Planet</Btn>
+                <Btn variant="success" onClick={() => { playClick(); setWorldCore(w=>({...w, ending:"remain"})); }}>Build Civilization</Btn>
+                <Btn variant="danger" onClick={() => { playClick(); setWorldCore(w=>({...w, ending:"ruler"})); }}>Rule the Wasteland</Btn>
+              </div>
+            </>
+          ) : (
+            <>
+              <Confetti />
+              <h1 style={{ color: worldCore.ending === "ruler" ? "#e85c3a" : worldCore.ending === "remain" ? "#3ec995" : "#87cefa", letterSpacing: 4, margin: "0 0 16px" }}>{selected.title}</h1>
+              <p style={{ color: "rgba(255,255,255,0.82)", fontSize: 18, lineHeight: 1.7, maxWidth: 680, margin: "0 auto 28px" }}>{selected.desc}</p>
+              <Btn variant="gold" onClick={() => { playClick(); localStorage.removeItem("aleria_elf_save"); setScreen("main_menu"); }}>Return to Menu</Btn>
+            </>
+          )}
         </div>
       </div>
     );
@@ -944,7 +1414,12 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
               
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <Btn variant="success" disabled={rations < 1} onClick={() => { playClick(); if(rations>=1){ setRations(r=>r-1); setHp(h=>Math.min(maxHp, h+30)); setMaze(m=>{let nm={...m}; nm.logs=[...nm.logs.slice(-5), {msg:"Ate a ration. +30 HP", type:"heal", id:Date.now()}]; return nm;}); } }}>Eat Ration</Btn>
-                <Btn variant="danger" onClick={() => { playClick(); addLog("Fled the ruins early. (No Clear Bonus)", "dmg"); setLeftTab("map"); setPhase("outpost"); }}>Flee Now</Btn>
+                <Btn variant="danger" onClick={() => { playClick(); addLog("Fled the ruins early. (No Clear Bonus)", "dmg"); 
+                  // FIX: Save maze state so re-entering keeps same enemies/loot (no exploit)
+                  if (maze && !clearedNodes.includes(maze.name)) {
+                    setSavedMazes(prev => ({...prev, [maze.name]: maze}));
+                  }
+                  setLeftTab("map"); setPhase("outpost"); }}>Flee Now</Btn>
               </div>
             </div>
           </div>
@@ -991,7 +1466,7 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
                  <h2 style={{ color: "#3ec995", fontSize: 32, letterSpacing: "4px", margin: "0 0 10px" }}>GIANTS DEFEATED</h2>
                  <p style={{ color: "rgba(255,255,255,0.7)", marginBottom: 30, maxWidth: 400 }}>The colossal constructs collapse into the snow. Within their smoldering wreckage, you pry loose a pristine, glowing cylinder.</p>
                  <Btn variant="primary" onClick={() => {
-                     playClick(); setGiantPhase(2); setArtifacts(a => a + 25); addLog("Retrieved Archon Tech Core & 25 Artifacts.", "reward");
+                     playClick(); setGiantPhase(2); setArtifacts(a => a + 25); setFrostTitanHearts(h => Math.min(5, h + 1)); setAncientCoreFragments(f => f + 4); changeMorale(12, "The city survived a major titan kill."); addLog("Retrieved Archon Tech Core, 25 Artifacts, 4 Core Fragments, and 1 Frost Titan Heart.", "reward");
                      setGiantVictory(false); setGiantCombat(null); setLeftTab("adv_tech"); setPhase("outpost");
                  }}>Salvage Archon Core & Return</Btn>
               </div>
@@ -1002,7 +1477,33 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
           <div className="frost-panel giant-shake" style={{ padding: 40, textAlign: "center", borderColor: "#e85c3a", background: "rgba(232,92,58,0.15)", boxShadow: "0 20px 50px rgba(232,92,58,0.2)", transform: "translateZ(30px)" }}>
             <h1 style={{ color: "#e85c3a", margin: "0 0 10px", textTransform: "uppercase", letterSpacing: "8px", textShadow: "0 0 30px #e85c3a", fontSize: 36 }}>FROST GIANTS</h1>
             <Bar val={Math.max(0, giantCombat.hp)} max={giantCombat.maxHp} color="#e85c3a" h={16} />
-            <p style={{ color: "rgba(255,255,255,0.8)", marginTop: 15, fontSize: 18, fontWeight: "bold" }}>HP: {Math.max(0, giantCombat.hp)} / {giantCombat.maxHp}</p>
+            <p style={{ color: "rgba(255,255,255,0.8)", marginTop: 15, fontSize: 18, fontWeight: "bold" }}>HP: {Math.max(0, giantCombat.hp)} / {giantCombat.maxHp} | Phase {giantCombat.phase || 1}</p>
+          </div>
+          <div className="frost-panel" style={{ padding: 20, borderColor: "#e85c3a", display: "grid", gridTemplateColumns: "1fr 280px", gap: 20, alignItems: "center" }}>
+            <div className={`giant-target-stage ${bossAnim === "hit" ? "giant-hit-flash" : bossAnim === "miss" ? "giant-miss-dodge" : ""}`} style={{ position: "relative", height: 360, display: "flex", justifyContent: "center", alignItems: "center" }}>
+              <div style={{ position: "absolute", width: 180, height: 300, borderRadius: "48% 48% 22% 22%", background: "linear-gradient(180deg, #a6d8ff, #4d6d85 45%, #243443)", boxShadow: "0 0 60px rgba(135,206,250,0.35), inset 0 0 30px rgba(0,0,0,0.45)" }} />
+              <div style={{ position: "absolute", top: 10, width: 92, height: 82, borderRadius: "45%", background: "#cbefff", boxShadow: "0 0 30px rgba(255,255,255,0.45)" }} />
+              <div style={{ position: "absolute", left: "calc(50% - 160px)", top: 115, width: 90, height: 38, borderRadius: 22, background: "#7899ad", transform: "rotate(-25deg)" }} />
+              <div style={{ position: "absolute", right: "calc(50% - 160px)", top: 115, width: 90, height: 38, borderRadius: 22, background: "#7899ad", transform: "rotate(25deg)" }} />
+              <div style={{ position: "absolute", left: "calc(50% - 82px)", bottom: 22, width: 52, height: 118, borderRadius: 24, background: "#405464" }} />
+              <div style={{ position: "absolute", right: "calc(50% - 82px)", bottom: 22, width: 52, height: 118, borderRadius: 24, background: "#405464" }} />
+              {bossTargets.map(t => {
+                const pos = {
+                  head: { top: 28, left: "50%" },
+                  chest: { top: 142, left: "50%" },
+                  leftArm: { top: 125, left: "31%" },
+                  rightArm: { top: 125, left: "69%" },
+                  leftLeg: { top: 268, left: "43%" },
+                  rightLeg: { top: 268, left: "57%" }
+                }[t.id];
+                return <button key={t.id} title={`${t.label}: ${t.base}% base. ${t.effect}`} onClick={() => fireAtGiantTarget(t)} style={{ position: "absolute", ...pos, transform: "translate(-50%, -50%)", width: 78, height: 38, borderRadius: 8, border: "1px solid rgba(232,92,58,0.65)", background: "rgba(232,92,58,0.14)", color: "#fff", cursor: qte ? "not-allowed" : "crosshair", fontSize: 11, fontWeight: 800 }}>{t.label}</button>;
+              })}
+            </div>
+            <div>
+              <h3 style={{ color: "#ffd966", margin: "0 0 10px" }}>Target Zones</h3>
+              <p style={{ fontSize: 12, marginBottom: 12 }}>finalChance = base + weaponAccuracy + skillBonus + moraleBonus - bossEvasion.</p>
+              {bossTargets.map(t => <div key={t.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,0.08)" }}><span>{t.label}</span><span style={{ color: "#87cefa" }}>{t.base}% base</span></div>)}
+            </div>
           </div>
           <div style={{ display: "flex", gap: 20, transform: "translateZ(20px)" }}>
             <div className="frost-panel" style={{ flex: 1, padding: 25, borderColor: "#a89df0", boxShadow: "0 10px 30px rgba(168,157,240,0.1)" }}>
@@ -1039,11 +1540,86 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
     );
   }
 
-  return (
+return (
     <div style={{ minHeight: "100vh", background: "radial-gradient(circle at 50% 0%, #1a2436 0%, #05080f 100%)", fontFamily: "var(--font-sans)", padding: "20px", position: "relative" }}>
+      
+      {/* ELF TUTORIAL BUTTON */}
+      <div 
+        onClick={() => { playClick(); setShowTutorial(true); }}
+        style={{ position: "fixed", bottom: 20, left: 20, width: 45, height: 45, borderRadius: "50%", background: "rgba(135,206,250,0.1)", border: "2px solid #87cefa", color: "#87cefa", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: "bold", fontFamily: "serif", cursor: "pointer", zIndex: 900, boxShadow: "0 0 15px rgba(135,206,250,0.3)" }}
+      >
+        i
+      </div>
+
+      {showTutorial && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 1500, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(5px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div className="frost-panel" style={{ maxWidth: 500, padding: 30, position: "relative", borderColor: "#87cefa", boxShadow: "0 0 30px rgba(135,206,250,0.2)" }}>
+            <button onClick={() => { playClick(); setShowTutorial(false); }} style={{ position: "absolute", top: 15, right: 15, background: "none", border: "none", color: "#e85c3a", fontSize: 20, cursor: "pointer" }}>✕</button>
+            <h2 style={{ color: "#87cefa", margin: "0 0 20px", letterSpacing: "2px", textTransform: "uppercase" }}>Survival Guide</h2>
+            <p style={{ fontSize: 14, color: "rgba(255,255,255,0.8)", marginBottom: 15, lineHeight: 1.6 }}><strong>Generator:</strong> Burns Coal automatically. Keep it fueled or you freeze to death.</p>
+            <p style={{ fontSize: 14, color: "rgba(255,255,255,0.8)", marginBottom: 15, lineHeight: 1.6 }}><strong>Food:</strong> Gathered by assigned Hunters and Farmers. Raw meat and veg are combined automatically to feed citizens.</p>
+            <p style={{ fontSize: 14, color: "rgba(255,255,255,0.8)", marginBottom: 15, lineHeight: 1.6 }}><strong>Research:</strong> Use Artifacts to unlock crucial technology in the right panel.</p>
+            <p style={{ fontSize: 14, color: "rgba(255,255,255,0.8)", marginBottom: 15, lineHeight: 1.6 }}><strong>Exploration:</strong> Costs Energy and Rations. The deeper you go, the better the loot, but the greater the danger.</p>
+          </div>
+        </div>
+      )}
       
       {/* BACKGROUND EFFECTS */}
       <div className="snowstorm-container" style={{ pointerEvents: "none", opacity: 0.3, zIndex: 0 }}><div className="snow-layer" /></div>
+
+      {/* TUTORIAL "i" BUTTON */}
+      <button
+        data-testid="elf-tutorial-btn"
+        onClick={() => { playClick(); setShowTutorial(true); }}
+        style={{ position: "fixed", bottom: 20, left: 20, zIndex: 999, width: 44, height: 44, borderRadius: "50%", border: "2px solid rgba(135,206,250,0.8)", background: "rgba(10,15,25,0.9)", color: "#87cefa", fontSize: 20, fontWeight: 900, fontFamily: "serif", cursor: "pointer", boxShadow: "0 0 16px rgba(135,206,250,0.4)", transition: "all 0.2s" }}
+        onMouseOver={(e)=>{ e.currentTarget.style.transform="scale(1.1)"; e.currentTarget.style.boxShadow="0 0 26px rgba(135,206,250,0.7)"; }}
+        onMouseOut={(e)=>{ e.currentTarget.style.transform="scale(1)"; e.currentTarget.style.boxShadow="0 0 16px rgba(135,206,250,0.4)"; }}
+        title="Tutorial"
+      >i</button>
+
+      {/* RETURN TO MAIN MENU BUTTON */}
+      <button
+        data-testid="elf-return-menu-btn"
+        onClick={() => { playClick(); if(window.confirm("Return to Main Menu? Your progress is auto-saved.")) setScreen("main_menu"); }}
+        style={{ position: "fixed", top: 20, right: 20, zIndex: 998, padding: "8px 16px", borderRadius: 20, border: "1px solid rgba(135,206,250,0.4)", background: "rgba(10,15,25,0.8)", color: "rgba(255,255,255,0.7)", fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", cursor: "pointer", transition: "all 0.2s" }}
+        onMouseOver={(e)=>{ e.currentTarget.style.color="#fff"; e.currentTarget.style.borderColor="#87cefa"; }}
+        onMouseOut={(e)=>{ e.currentTarget.style.color="rgba(255,255,255,0.7)"; e.currentTarget.style.borderColor="rgba(135,206,250,0.4)"; }}
+      >☰ Menu</button>
+
+      {/* TUTORIAL MODAL */}
+      {showTutorial && (
+        <div className="frost-event-overlay" onClick={() => setShowTutorial(false)}>
+          <div className="frost-panel" onClick={(e)=>e.stopPropagation()} style={{ width: "92%", maxWidth: 640, background: "rgba(8, 12, 22, 0.98)", maxHeight: "85vh", overflowY: "auto", padding: 30, position: "relative", borderRadius: 14, border: "1px solid #87cefa", boxShadow: "0 0 40px rgba(135,206,250,0.3)" }}>
+            <button data-testid="elf-tutorial-close" onClick={() => { playClick(); setShowTutorial(false); }} style={{ position: "absolute", top: 12, right: 18, background: "transparent", color: "#87cefa", border: "none", fontSize: 24, cursor: "pointer" }}>✖</button>
+            <h2 style={{ color: "#87cefa", margin: "0 0 8px", letterSpacing: "3px", textTransform: "uppercase" }}>Overseer's Guide</h2>
+            <p style={{ color: "rgba(255,255,255,0.5)", fontSize: 13, marginBottom: 18, fontStyle: "italic" }}>The Federation left scant records. Here's what you've pieced together.</p>
+            <div style={{ color: "rgba(255,255,255,0.85)", fontSize: 13.5, lineHeight: 1.7 }}>
+              <h3 style={{ color: "#ffd966", fontSize: 15, marginTop: 8, marginBottom: 8, letterSpacing: 1 }}>RESOURCES</h3>
+              <p><b style={{color:"#ff8c00"}}>Coal</b> — burns in the Central Core to keep <b>Heat</b> up. If the Core goes cold, you freeze.</p>
+              <p><b style={{color:"#87cefa"}}>Materials</b> — used to construct buildings and craft equipment.</p>
+              <p><b style={{color:"#a8a8a8"}}>Iron</b> — for advanced metallurgy crafts: pickaxes, armor, rifles.</p>
+              <p><b style={{color:"#ffd966"}}>Artifacts</b> — unlock research. <b>15 Artifacts</b> + <b>5 Mana</b> are needed to breach the Federation Capital.</p>
+              <p><b style={{color:"#a89df0"}}>Mana Crystals</b> — found in glowing ruin relics and the Mana Siphon (after research). Required for high-end research and the Capital.</p>
+              <p><b style={{color:"#e85c3a"}}>Meat / Vegetables</b> — used for crafting rations and recipes.</p>
+
+              <h3 style={{ color: "#ffd966", fontSize: 15, marginTop: 14, marginBottom: 8, letterSpacing: 1 }}>BUILDINGS</h3>
+              <p><b>Central Core</b> — keeps the complex warm. Stoke it manually or assign citizens.</p>
+              <p><b>Greenhouses</b> — produce food/vegetables.</p>
+              <p><b>Hunting Lodges</b> — produce food/meat. Hunters also help defend against bandits.</p>
+              <p><b>Coal Mines</b> — produce coal. Lower-level mines have cave-in risk.</p>
+
+              <h3 style={{ color: "#ffd966", fontSize: 15, marginTop: 14, marginBottom: 8, letterSpacing: 1 }}>RESEARCH</h3>
+              <p>Each research costs <b>Artifacts</b>. <b>Settlement Foundation</b> unlocks construction and population mechanics. <b>Metallurgy → Advanced Armory</b> leads to the Mana Rifle. <b>Skyspine Harness</b> appears after the Giants arrive and is needed to fight back.</p>
+
+              <h3 style={{ color: "#ffd966", fontSize: 15, marginTop: 14, marginBottom: 8, letterSpacing: 1 }}>SURVIVAL TIPS</h3>
+              <p>• Food consumption doubles every 5 citizens. Build greenhouses before expanding population.</p>
+              <p>• Rest to restore Energy (uses food). Eat Rations or use Raw Artifact for emergencies.</p>
+              <p>• The Frost Giants arrive when the town has matured. Build the Skyspine Harness early once it unlocks.</p>
+              <p>• Civilian disputes, refugees, and bandits will appear over time — choose carefully.</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* STRIKING 2.5D RESEARCH ANNOUNCEMENT */}
       {researchAnnounce && (
@@ -1089,9 +1665,9 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
 
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {citizens.map(c => (
-                <div key={c.id} style={{ display: "grid", gridTemplateColumns: "1fr 2fr 150px", alignItems: "center", padding: "12px 15px", background: "rgba(255,255,255,0.03)", borderRadius: 8, borderLeft: `4px solid ${c.job === 'farm' ? '#3ec995' : c.job === 'hunt' ? '#e85c3a' : c.job === 'mine' ? '#87cefa' : c.job === 'heat' ? '#ff8c00' : '#444'}` }}>
+                <div key={c.id} style={{ display: "grid", gridTemplateColumns: "1.2fr 2fr 150px", alignItems: "center", padding: "12px 15px", background: "rgba(255,255,255,0.03)", borderRadius: 8, borderLeft: `4px solid ${c.job === 'farm' ? '#3ec995' : c.job === 'hunt' ? '#e85c3a' : c.job === 'mine' ? '#87cefa' : c.job === 'heat' ? '#ff8c00' : '#444'}` }}>
                   <div className="citizen-name-age" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <strong style={{ color: "#fff", fontSize: 15 }}>{c.name}</strong>
+                    <div><strong style={{ color: "#fff", fontSize: 15 }}>{c.name}</strong><div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", marginTop: 2 }}>{(c.traits || []).join(", ") || "no traits"} | Rel {c.relationship ?? 50}</div></div>
                     <span className="age-tag" style={{ background: "rgba(255, 215, 100, 0.15)", color: "#ffd966", fontSize: 13, padding: "2px 8px", borderRadius: 12, border: "1px solid rgba(255, 215, 100, 0.4)", fontWeight: 500 }}>Age {c.age || "???"}</span>
                   </div>
                   <div style={{ display: "flex", gap: 15, fontSize: 12 }}>
@@ -1118,10 +1694,15 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
         <div className="frost-event-overlay">
           <div className="frost-event-box" style={{ background: "rgba(10, 8, 16, 0.98)", border: "2px solid #a89df0", borderRadius: 16, padding: 40, boxShadow: "0 0 50px rgba(168,157,240,0.3), inset 0 0 20px rgba(168,157,240,0.1)", textAlign: "center", maxWidth: 500, animation: "cinFadeIn 0.3s ease-out" }}>
             <h2 className="frost-event-title" style={{ color: "#a89df0", fontSize: 26, textTransform: "uppercase", letterSpacing: 3, margin: "0 0 15px" }}>{activeEvent.title}</h2>
-            <p className="frost-event-desc" style={{ color: "rgba(255,255,255,0.8)", fontSize: 16, lineHeight: 1.6, marginBottom: 30 }}>{activeEvent.desc}</p>
+            <p className="frost-event-desc" style={{ color: "rgba(255,255,255,0.8)", fontSize: 16, lineHeight: 1.6, marginBottom: 20 }}>{activeEvent.desc}</p>
+            {!eventReady && (
+              <div style={{ marginBottom: 18, fontSize: 11, color: "rgba(255,217,102,0.6)", letterSpacing: 1.5 }}>
+                ⌛ Reading... please wait
+              </div>
+            )}
             <div>
               {activeEvent.choices.map((c, i) => (
-                <button key={i} disabled={!c.req} className={`frost-choice-btn ${c.color === "danger" ? "frost-choice-danger" : ""}`} style={{ width: "100%", marginBottom: 12, padding: 15, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.2)", color: "#fff", borderRadius: 8, fontSize: 15, transition: "all 0.2s", display: "flex", justifyContent: "space-between", alignItems: "center", opacity: c.req ? 1 : 0.5, cursor: c.req ? "pointer" : "not-allowed" }} onClick={c.req ? c.action : null}>
+                <button key={i} data-testid={`elf-event-choice-${i}`} disabled={!c.req || !eventReady} className={`frost-choice-btn ${c.color === "danger" ? "frost-choice-danger" : ""}`} style={{ width: "100%", marginBottom: 12, padding: 15, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.2)", color: "#fff", borderRadius: 8, fontSize: 15, transition: "all 0.2s", display: "flex", justifyContent: "space-between", alignItems: "center", opacity: (c.req && eventReady) ? 1 : 0.5, cursor: (c.req && eventReady) ? "pointer" : "not-allowed" }} onClick={(c.req && eventReady) ? c.action : null}>
                   <span>{c.label}</span>{!c.req && <span style={{ color: "#e85c3a", fontSize: 12 }}>Missing Req</span>}
                 </button>
               ))}
@@ -1139,6 +1720,11 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         .frost-choice-btn:hover:not(:disabled) { background: rgba(168,157,240,0.2) !important; border-color: #a89df0 !important; transform: translateY(-2px); }
         .frost-choice-danger:hover:not(:disabled) { background: rgba(232,92,58,0.2) !important; border-color: #e85c3a !important; }
+        .giant-target-stage button:hover { background: rgba(232,92,58,0.85) !important; border-color: #ffb8a8 !important; box-shadow: 0 0 18px rgba(232,92,58,0.8); }
+        .giant-hit-flash { animation: giantHitFlash 0.45s ease; }
+        .giant-miss-dodge { animation: giantMissDodge 0.45s ease; }
+        @keyframes giantHitFlash { 0%,100% { filter: none; } 45% { filter: brightness(1.8) saturate(1.4); } }
+        @keyframes giantMissDodge { 0%,100% { transform: translateX(0); } 45% { transform: translateX(28px); } }
       `}</style>
 
       {/* 3-COLUMN LAYOUT */}
@@ -1147,10 +1733,9 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
         {/* COLUMN 1: STICKY LEFT SIDEBAR */}
         <div className="frost-panel no-scrollbar" style={{ width: 260, position: "sticky", top: 20, padding: 20, borderRadius: 12, display: "flex", flexDirection: "column", gap: 20, maxHeight: "calc(100vh - 40px)", overflowY: "auto" }}>
            <div>
-             <h2 onClick={() => { playClick(); handleCheat(); }} title="Enter Cheat Code" style={{ margin: 0, fontSize: 20, color: "#87cefa", textTransform: "uppercase", letterSpacing: "2px", cursor: "pointer" }}>{megaCity ? "Aleria Mega-City" : (tech.settlement ? "Gorthon Settlement" : "Frozen Outpost")}</h2>
-             <p style={{ margin: "5px 0 0", fontSize: 12, color: "rgba(135, 206, 250, 0.6)" }}>Core Lvl {coreLevel} • Pop: {population}/{maxPopulation}</p>
-             {tech.settlement && <Btn small variant="ghost" style={{ marginTop: 10, width: "100%" }} onClick={() => { playClick(); setShowCitizens(true); }}>Manage Citizens</Btn>}
-           </div>
+  <h2 onClick={() => { playClick(); handleCheat(); }} title="Enter Cheat Code" style={{ margin: 0, fontSize: 20, color: "#87cefa", textTransform: "uppercase", letterSpacing: "2px", cursor: "pointer" }}>{megaCity ? "Aleria Mega-City" : (tech.settlement ? "Gorthon Settlement" : "Frozen Outpost")}</h2>
+  <p style={{ margin: "5px 0 0", fontSize: 12, color: "rgba(135, 206, 250, 0.6)" }}>Core Lvl {coreLevel} • Pop: {population}/{maxPopulation}</p>
+</div>
 
            <div style={{ display: "flex", flexDirection: "column", gap: 15 }}>
               <div className={(temp/maxHeat) < 0.2 ? "blink-alarm" : ""} style={{ padding: 5, borderRadius: 5 }}>
@@ -1160,6 +1745,10 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
               <div className={(food/maxFood) < 0.2 ? "blink-alarm" : ""} style={{ padding: 5, borderRadius: 5 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#e85c3a", fontWeight: "bold", marginBottom: 3 }}><span>FOOD</span><span>{Math.floor(food)} / {maxFood}</span></div>
                 <Bar val={food} max={maxFood} color="#e85c3a" h={10} />
+              </div>
+              <div className={morale < 20 ? "blink-alarm" : ""} style={{ padding: 5, borderRadius: 5 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: morale >= 70 ? "#3ec995" : morale >= 40 ? "#ffd966" : "#e85c3a", fontWeight: "bold", marginBottom: 3 }}><span>MORALE</span><span>{Math.floor(morale)}% - {moraleBand}</span></div>
+                <Bar val={morale} max={100} color={morale >= 70 ? "#3ec995" : morale >= 40 ? "#ffd966" : "#e85c3a"} h={10} />
               </div>
               {phase !== "endless" && (
                 <div style={{ padding: 5 }}>
@@ -1182,6 +1771,8 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
               <Tag color="#3ec995">Veg: {vegetables}</Tag>
               <Tag color="#a8a8a8">Iron: {iron}</Tag>
               <Tag color="#a89df0">Mana: {manaCrystals}</Tag>
+              <Tag color="#87cefa">Frag: {ancientCoreFragments}</Tag>
+              <Tag color="#e85c3a">Heart: {frostTitanHearts}</Tag>
               <Tag color="#ffd966">Art: {artifacts}</Tag>
               <Tag color="#3ec995">Rat: {rations}</Tag>
            </div>
@@ -1201,8 +1792,37 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
                  <Btn variant={leftTab === "actions" ? "primary" : "ghost"} onClick={() => { playClick(); setLeftTab("actions"); }} style={{ flex: 1 }}>Actions</Btn>
                  <Btn variant={leftTab === "crafting" ? "primary" : "ghost"} onClick={() => { playClick(); setLeftTab("crafting"); }} style={{ flex: 1 }}>Crafting</Btn>
                  {tech.settlement && <Btn variant={leftTab === "map" ? "primary" : "ghost"} onClick={() => { playClick(); setLeftTab("map"); }} style={{ flex: 1 }}>World Map</Btn>}
+                 {tech.settlement && <Btn variant={leftTab === "core" ? "primary" : "ghost"} onClick={() => { playClick(); setLeftTab("core"); }} style={{ flex: 1 }}>World Core</Btn>}
                  {giantPhase >= 2 && <Btn variant={leftTab === "adv_tech" ? "primary" : "ghost"} onClick={() => { playClick(); setLeftTab("adv_tech"); }} style={{ flex: 1 }}>Advanced Tech</Btn>}
+                 <Btn variant={leftTab === "meta" ? "primary" : "ghost"} onClick={() => { playClick(); setLeftTab("meta"); }} style={{ flex: 1 }}>Echoes</Btn>
                </div>
+
+               {leftTab === "core" && (
+                 <div className="frost-panel" style={{ padding: 25, borderRadius: 12 }}>
+                   <h3 style={{ color: "#87cefa", margin: "0 0 12px", fontSize: 22 }}>World Core Restoration</h3>
+                   <p style={{ fontSize: 13, color: "rgba(255,255,255,0.65)", marginBottom: 18 }}>Act 4 requires 25 Ancient Core Fragments, 100 Mana Crystals, 5 Frost Titan Hearts, 50 Population, and 70 Morale.</p>
+                   <div style={{ display: "grid", gap: 12 }}>
+                     {OBJECTIVES.map(o => <div key={o.id}><div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#fff", marginBottom: 4 }}><span>{o.title}</span><span>{Math.min(o.progress, o.max)} / {o.max}</span></div><Bar val={Math.min(o.progress, o.max)} max={o.max} color={o.progress >= o.max ? "#3ec995" : "#87cefa"} h={8} /></div>)}
+                   </div>
+                   <div style={{ display: "flex", gap: 10, marginTop: 22, flexWrap: "wrap" }}>
+                     <Btn variant="primary" disabled={worldCore.repaired || ancientCoreFragments < 25 || manaCrystals < 100 || frostTitanHearts < 5 || population < 50 || morale < 70} onClick={() => { playClick(); setAncientCoreFragments(f=>f-25); setManaCrystals(m=>m-100); setFrostTitanHearts(h=>h-5); setWorldCore(w=>({...w, repaired:true})); changeMorale(15, "The World Core was restored."); }}>Restore Core</Btn>
+                     {worldCore.repaired && !worldCore.activated && <Btn variant="gold" onClick={() => { playClick(); setWorldCore(w=>({...w, activated:true})); setPhase("ending_choice"); }}>Activate Endgame</Btn>}
+                   </div>
+                 </div>
+               )}
+
+               {leftTab === "meta" && (
+                 <div className="frost-panel" style={{ padding: 25, borderRadius: 12 }}>
+                   <h3 style={{ color: "#ffd966", margin: "0 0 8px", fontSize: 22 }}>Ancient Echoes</h3>
+                   <p style={{ fontSize: 13, color: "rgba(255,255,255,0.65)" }}>{isMetaDisabled ? "Meta progression is disabled in Hard and Insanity." : `Echoes available: ${ancientEchoes}. Earned after death, spent across future runs.`}</p>
+                   <div style={{ display: "grid", gap: 10 }}>
+                     {META_UPGRADES.map(u => <div key={u.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: 12, background: "rgba(0,0,0,0.35)", border: "1px solid rgba(255,217,102,0.25)", borderRadius: 8 }}>
+                       <div><strong style={{ color: metaUpgrades[u.id] ? "#3ec995" : "#ffd966" }}>{u.name}</strong><p style={{ margin: 0, fontSize: 11 }}>{u.desc}</p></div>
+                       {metaUpgrades[u.id] ? <Tag color="#3ec995">Unlocked</Tag> : <Btn small variant="gold" disabled={isMetaDisabled || ancientEchoes < u.cost} onClick={() => buyMetaUpgrade(u)}>{u.cost} Echoes</Btn>}
+                     </div>)}
+                   </div>
+                 </div>
+               )}
 
                {/* TAB: ADVANCED TECH TREE */}
                {leftTab === "adv_tech" && (
@@ -1265,14 +1885,15 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
                {leftTab === "map" && (
                   <div className="frost-panel" style={{ padding: 25, borderRadius: 12 }}>
                     <h3 style={{ color: "#a89df0", margin: "0 0 15px", fontSize: 22 }}>The Frozen Expanse</h3>
-                    <p style={{ fontSize: 13, color: "rgba(255,255,255,0.7)", marginBottom: 20 }}>The ice is shifting. Journeying to a complex requires 1 Travel Ration.</p>
+                    <p style={{ fontSize: 13, color: "rgba(255,255,255,0.7)", marginBottom: 20 }}>Fog of war hides distant regions until landmarks are cleared. Travel costs rations and time.</p>
                     <div style={{ display: "grid", gap: 10 }}>
                       {EXPLORATION_NODES.map(n => {
                          const isCleared = clearedNodes.includes(n.name);
+                         const isKnown = exploredLandmarks.includes(n.name);
                          return (
-                           <div key={n.name} style={{ background: "rgba(0,0,0,0.4)", border: `1px solid ${isCleared ? "rgba(62,201,149,0.5)" : "rgba(135,206,250,0.3)"}`, padding: 15, borderRadius: 8, display: "flex", justifyContent: "space-between", alignItems: "center", opacity: isCleared ? 0.5 : 1 }}>
-                             <div><h4 style={{ margin: 0, color: isCleared ? "#3ec995" : "#fff", textDecoration: isCleared ? "line-through" : "none" }}>{n.name}</h4><p style={{ margin: 0, fontSize: 11, color: "rgba(255,255,255,0.5)" }}>{n.desc}</p></div>
-                             {isCleared ? <span style={{ color: "#3ec995", fontWeight: "bold", fontSize: 13, letterSpacing: "1px" }}>CLEARED ✓</span> : <Btn small onClick={() => travelToNode(n)}>Travel</Btn>}
+                           <div key={n.name} style={{ background: "rgba(0,0,0,0.4)", border: `1px solid ${isCleared ? "rgba(62,201,149,0.5)" : isKnown ? "rgba(135,206,250,0.3)" : "rgba(255,255,255,0.08)"}`, padding: 15, borderRadius: 8, display: "flex", justifyContent: "space-between", alignItems: "center", opacity: isCleared ? 0.5 : isKnown ? 1 : 0.45 }}>
+                             <div><h4 style={{ margin: 0, color: isCleared ? "#3ec995" : isKnown ? "#fff" : "rgba(255,255,255,0.35)", textDecoration: isCleared ? "line-through" : "none" }}>{isKnown ? n.name : "Unknown Region"}</h4><p style={{ margin: 0, fontSize: 11, color: "rgba(255,255,255,0.5)" }}>{isKnown ? `${n.desc} Branches: ${n.branches.join(", ")}. Danger ${Math.round((n.dang + (permanentEffects.danger || 0)) * 100)}%. Cost ${n.travelCost} ration(s), ${n.travelTime} time.` : "Hidden by fog of war."}</p></div>
+                             {!isKnown ? <span style={{ color: "rgba(255,255,255,0.35)", fontSize: 12 }}>FOG</span> : isCleared ? <span style={{ color: "#3ec995", fontWeight: "bold", fontSize: 13, letterSpacing: "1px" }}>CLEARED</span> : <Btn small onClick={() => travelToNode(n)}>Travel</Btn>}
                            </div>
                          );
                       })}
@@ -1287,9 +1908,44 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
                )}
 
                {/* TAB CONTENT: ACTIONS & BUILDINGS */}
+<div 
+  className="frost-panel" 
+  style={{ padding: 20, borderRadius: 12, cursor: "pointer", borderColor: "rgba(135,206,250,0.4)" }} 
+  onClick={() => {
+    playClick();
+    if (energy < 12) return notify("Too exhausted to scavenge.", "#e85c3a");
+    applyDecay(8, 12);
+    
+    // 15% chance to get ambushed
+    if (Math.random() < 0.15) {
+       triggerEvent("monster");
+    } else {
+       const matFound = Math.floor(Math.random() * 8) + 5; // 5 to 12 Materials
+       const vegFound = Math.floor(Math.random() * 5) + 2; // 2 to 6 Veggies
+       
+       setMaterials(m => m + matFound);
+       setVegetables(v => v + vegFound);
+       addLog(`Scavenged the outskirts. Found ${matFound} Materials and ${vegFound} Frozen Veggies.`, "info");
+    }
+  }}
+>
+  <h4 style={{ color: "#87cefa", margin: "0 0 5px" }}>Scavenge Outskirts</h4>
+  <p style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>Search the perimeter for scrap metal and frozen roots. (Yields Materials & Veg)</p>
+</div>
                {leftTab === "actions" && (
-                 <>
-                   <div className={`frost-panel ${genOn ? "core-pulse-intense" : ""}`} style={{ padding: 25, borderRadius: 12, textAlign: "center", borderColor: genOn ? "#ff8c00" : "#444" }}>
+  <>
+    {/* NEW PROMINENT CITIZEN MANAGEMENT BANNER */}
+    {tech.settlement && (
+      <div className="frost-panel" style={{ padding: 20, borderRadius: 12, borderColor: "#a89df0", background: "rgba(168,157,240,0.1)", marginBottom: 15, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <h3 style={{ color: "#a89df0", margin: "0 0 5px", fontSize: 20 }}>Citizen Management</h3>
+          <p style={{ margin: 0, fontSize: 12, color: "rgba(255,255,255,0.7)" }}>Assign your {population} citizens to jobs to automate survival.</p>
+        </div>
+        <Btn variant="primary" onClick={() => { playClick(); setShowCitizens(true); }}>Manage Roster</Btn>
+      </div>
+    )}
+
+    <div className={`frost-panel ${genOn ? "core-pulse-intense" : ""}`} style={{ padding: 25, borderRadius: 12, textAlign: "center", borderColor: genOn ? "#ff8c00" : "#444" }}>
                      <h3 style={{ color: genOn ? "#ff8c00" : "#777", margin: "0 0 10px", fontSize: 22 }}>The Central Core</h3>
                      <p style={{ fontSize: 13, color: "rgba(255,255,255,0.7)", marginBottom: 20 }}>{genOn ? `Burning ${Math.max(1, (coreLevel * 2) - (tech.heating ? 1 : 0) - genEfficiency)} Coal per tick.` : "Core is OFFLINE. Workers are idle."}</p>
                      <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
@@ -1343,10 +1999,11 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
                          <p style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>Convert 30 Energy into 1 Mana Crystal.</p>
                        </div>
                      )}
-                     {tech.mining && <div className="frost-panel" style={{ padding: 20, borderRadius: 12, cursor: "pointer", borderColor: "rgba(135,206,250,0.4)" }} onClick={doMine}><h4 style={{ color: "#87cefa", margin: "0 0 5px" }}>Mine Coal</h4><p style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>Dig for fuel. <span style={{color:"#e85c3a"}}>Cave-in risk.</span></p></div>}
-                     <div className="frost-panel" style={{ padding: 20, borderRadius: 12, cursor: "pointer" }} onClick={doExplore}><h4 style={{ color: "#87cefa", margin: "0 0 5px" }}>Explore Ruins</h4><p style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>Scavenge the complex.</p></div>
-                     <div className="frost-panel" style={{ padding: 20, borderRadius: 12, cursor: "pointer" }} onClick={doHunt}><h4 style={{ color: "#e85c3a", margin: "0 0 5px" }}>Hunt & Forage</h4><p style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>Find food, meat, and veg.</p></div>
-                     <div className="frost-panel" style={{ padding: 20, borderRadius: 12, cursor: "pointer" }} onClick={doRest}><h4 style={{ color: "#3ec995", margin: "0 0 5px" }}>Rest</h4><p style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>Restores Energy. (-5 Food)</p></div>
+                     {tech.mining && <div className="frost-panel" style={{ padding: 20, borderRadius: 12, cursor: "pointer", borderColor: "rgba(135,206,250,0.4)" }} onClick={startDeepMine}><h4 style={{ color: "#87cefa", margin: "0 0 5px" }}>Deep Mine</h4><p style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>Safe, risky, or extreme coal runs.</p></div>}
+                     <div className="frost-panel" style={{ padding: 20, borderRadius: 12, cursor: "pointer" }} onClick={startRuinsExcavation}><h4 style={{ color: "#87cefa", margin: "0 0 5px" }}>Ancient Ruins</h4><p style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>Choose excavation risk for artifacts and fragments.</p></div>
+                     <div className="frost-panel" style={{ padding: 20, borderRadius: 12, cursor: "pointer" }} onClick={startHuntingChoice}><h4 style={{ color: "#e85c3a", margin: "0 0 5px" }}>Hunting</h4><p style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>Small prey, large prey, or monster hunt.</p></div>
+                     <div className="frost-panel" style={{ padding: 20, borderRadius: 12, cursor: "pointer" }} onClick={doRest}><h4 style={{ color: "#3ec995", margin: "0 0 5px" }}>Rest</h4><p style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>Restores Energy & some HP. (-5 Food)</p></div>
+                    <div className="frost-panel" style={{ padding: 20, borderRadius: 12, cursor: rations > 0 ? "pointer" : "not-allowed", borderColor: "rgba(62,201,149,0.4)", opacity: rations > 0 ? 1 : 0.4 }} onClick={rations > 0 ? eatRation : undefined}><h4 style={{ color: "#3ec995", margin: "0 0 5px" }}>Eat Ration ({rations})</h4><p style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>+30 HP, +40 Food.</p></div>
                      <div className="frost-panel" style={{ padding: 20, borderRadius: 12, cursor: "pointer", borderColor: "rgba(255,217,102,0.4)" }} onClick={useRawArtifact}><h4 style={{ color: "#ffd966", margin: "0 0 5px" }}>Raw Artifact</h4><p style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}><strong style={{ color: "#e85c3a" }}>High risk.</strong> Requires 1 Art.</p></div>
                    </div>
                  </>
@@ -1495,7 +2152,6 @@ export default function ElfScenario({ setScreen, notify, stats, setStats }) {
             )}
           </div>
         </div>
-
       </div>
     </div>
   );

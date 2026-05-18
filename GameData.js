@@ -34,7 +34,21 @@ export const RACES=[
 ];
 
 export const ORIGINS=[{id:"traveler",name:"Wandering contractor",desc:"On the road long enough."},{id:"youth",name:"Youth leaving home",desc:"Earn money or find independence."}];
-export const CLASSES=[{id:"adventurer",name:"Adventurer",org:"Alabastrine Guild",desc:"Bronze to Platinum. Earnings scale with rank."},{id:"hunter",name:"Hunter",org:"Hunter Association",desc:"Better flat pay. No inactivity rules."},{id:"merchant",name:"Merchant",org:"Independent",desc:"Craft and sell items. Equars only."}];
+
+export const CLASSES = [
+  { id: "adventurer", name: "Adventurer", org: "Alabastrine Guild", desc: "General combat and exploration contracts." },
+  { id: "hunter", name: "Hunter", org: "Hunter Association", desc: "Specializes in tracking and beast contracts." },
+  { id: "merchant", name: "Merchant", org: "Independent", desc: "Focuses on crafting and trade requests. (Equar only)" }
+];
+
+// 2. Make sure "Silk" exists as a base material so you can actually craft Robes/Armor!
+export const MATERIALS = [
+  { id: "junk", name: "Junk", price: 2 },
+  { id: "parts", name: "Mechanical Parts", price: 10 },
+  { id: "hide", name: "Beast Hide", price: 15 },
+  { id: "silk", name: "Spider Silk", price: 25 }, // <-- FIXED: Added missing Silk
+  { id: "ore", name: "Iron Ore", price: 20 }
+];
 export const RANKS=["Bronze","Iron","Silver","Gold","Diamond","Platinum"];
 export const RANK_THRESHOLDS=[80,250,600,1400,3000];
 export const RANK_MULT=[1.0,1.15,1.35,1.6,2.0,2.5];
@@ -71,6 +85,7 @@ export const SURFACE_SPELLS=[
 export const DEVIL_SPELLS=[
   {id:"elem_theory",name:"Elemental theory",prereq:null,progress:100,learned:true,replaces:null,desc:"Innate.",combatUse:null},
   {id:"fire_1",name:"Fire — Lv.1",prereq:"elem_theory",progress:100,learned:true,replaces:null,desc:"Innate fire.",combatUse:{label:"Fire Lv.1",dmg:[18,26],mpCost:10}},
+  {id:"fire_2",name:"Hellfire — Lv.2",prereq:"fire_1",progress:0,learned:false,replaces:"fire_1",desc:"Intense demonic flames.",combatUse:{label:"Hellfire Lv.2",dmg:[35,50],mpCost:25}},
   {id:"illusion_1",name:"Illusion — Lv.1",prereq:"elem_theory",progress:0,learned:false,replaces:null,desc:"Confuses.",combatUse:{label:"Illusion Lv.1",dmg:[0,0],mpCost:12,effect:"confuse",turns:1}},
 ];
 

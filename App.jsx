@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
 
 import ElfScenario from "./ElfScenario";
+import DevilScenario from "./DevilScenario";
+import EquarScenario from "./EquarScenario";
+import TenebrimScenario from "./TenebrimScenario";
+
 // ── 1. Importera Ljud ──────────────────────────────────────────────────────
 import { SFX, stopBoss, playWaves, playLumen, playMenuBGM, playCombatBGM, stopBGM, playRaceBGM } from "./AudioEngine";
 
@@ -117,6 +121,7 @@ export default function App(){
   const [qteSequence,setQteSequence]=useState([]);
   const [qteIdx,setQteIdx]=useState(0);
   const [golems,setGolems]=useState([]);
+  const [lumenQteTime, setLumenQteTime] = useState(100);
   
   // Underworld Minigames
   const [siphonNodes,setSiphonNodes]=useState([]);
@@ -196,24 +201,26 @@ export default function App(){
   useEffect(() => {
     const tick = setInterval(() => {
       setExpeditions(prev => {
-        if (prev.length === 0) return prev; // Gör inget om inga är utsända
-        
-        const updated = prev.map(exp => ({ ...exp, timeLeft: exp.timeLeft - 1 }));
-        const finished = updated.filter(exp => exp.timeLeft <= 0);
-        const ongoing = updated.filter(exp => exp.timeLeft > 0);
-        
-        // Ge belöning för de som återvänder
-        finished.forEach(exp => {
-          setBronze(b => b + exp.reward);
-          notify(`A squad returned with ${exp.reward} B!`, "#3ec995");
-          if(window.SFX && window.SFX.reward) window.SFX.reward();
-        });
-        
-        return ongoing;
+        if (prev.length === 0) return prev;
+        return prev.map(exp => ({ ...exp, timeLeft: exp.timeLeft - 1 }));
       });
     }, 1000);
     return () => clearInterval(tick);
-  }, []); // Tom array betyder att den startar en gång när spelet laddas och körs för evigt
+  }, []);
+
+  // NY LOGIK: Dela ut belöningar när en expedition når 0
+  useEffect(() => {
+    const finished = expeditions.filter(exp => exp.timeLeft <= 0);
+    if (finished.length > 0) {
+      finished.forEach(exp => {
+        setBronze(b => b + exp.reward);
+        notify(`A squad returned with ${exp.reward} B!`, "#3ec995");
+        if (window.SFX && window.SFX.reward) window.SFX.reward();
+      });
+      // Ta bort de avslutade expeditionerna från listan
+      setExpeditions(prev => prev.filter(exp => exp.timeLeft > 0));
+    }
+  }, [expeditions]); // Tom array betyder att den startar en gång när spelet laddas och körs för evigt
 
   // ── Test-fusk & Debug ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -290,20 +297,48 @@ export default function App(){
   function notify(msg,color="#5b4fd4"){setNotif({msg,color});setTimeout(()=>setNotif(null),2600);}
   function addLog(msg,type="info"){setLog(l=>[...l.slice(-70),{msg,type,id:Date.now()+Math.random()}]);}
 
-  function exportSave() {
+  function exportSave(silent=false) {
     const data = { diff, race, cls, stats, xp, bronze, weapon, weapon2, armor, ownedWeapons, ownedArmors, potions, doomsday, day, postDoomsday, devilRep, cityLevel, nobleQuestActive, craftedShop };
     try {
       localStorage.setItem("aleria_save_slot", JSON.stringify(data));
-      notify("Game saved to browser memory!", "#3ec995");
+      if (!silent) notify("Game saved to browser memory!", "#3ec995");
     } catch(e) {
-      notify("Failed to save.", "#d84838");
+      if (!silent) notify("Failed to save.", "#d84838");
     }
   }
 
   function importSave() {
     const s = localStorage.getItem("aleria_save_slot"); 
-    if (!s) { notify("No save found in browser.", "#d84838"); return; }
+    const elfSave = localStorage.getItem("aleria_elf_save");
+    const tenebrimSave = localStorage.getItem("aleria_tenebrim_save");
+    if (!s && !elfSave && !tenebrimSave) { notify("No save found in browser.", "#d84838"); return; }
     if (window.SFX && window.SFX.menuSelect) window.SFX.menuSelect();
+    
+    // If elf scenario save exists and no main save, jump directly into Elf
+    if (!s && elfSave) {
+      try {
+        const elf = JSON.parse(elfSave);
+        // Build a minimal "elf race" state so Elf scenario can run
+        setRace({ id: "elf", name: "Elf" });
+        setCls({ id: "elf_engineer", name: "Federation Engineer" });
+        setStats({ hp: elf.hp || 100, maxHp: 100, mp: 60, maxMp: 60, stamina: 80, maxStamina: 80 });
+        setScreen("elf_scenario");
+        notify("Elf save loaded!", "#3ec995");
+        return;
+      } catch(e) { notify("Invalid elf save.", "#d84838"); return; }
+    }
+    // Tenebrim addition: load standalone Tenebrim scenario saves without requiring a main slot.
+    if (!s && tenebrimSave) {
+      try {
+        JSON.parse(tenebrimSave);
+        setRace({ id: "tenebrim", name: "Tenebrim", canSpell: false });
+        setCls({ id: "wanderer", name: "Wanderer", org: "Self-trained" });
+        setStats({ hp: 125, maxHp: 125, mp: 0, maxMp: 0, stamina: 90, maxStamina: 90 });
+        setScreen("tenebrim_survival");
+        notify("Tenebrim save loaded!", "#3ec995");
+        return;
+      } catch(e) { notify("Invalid Tenebrim save.", "#d84838"); return; }
+    }
     try {
       const parsed = JSON.parse(s);
       if(parsed.diff) setDiff(parsed.diff); 
@@ -326,7 +361,11 @@ export default function App(){
       if(parsed.nobleQuestActive!==undefined) setNobleQuestActive(parsed.nobleQuestActive);
       if(parsed.craftedShop) setCraftedShop(parsed.craftedShop);
       
-      setScreen(parsed.race?.id === "devil" && !parsed.nobleQuestActive ? "underworld" : "overworld");
+      // FIX: Resume in correct scenario depending on race
+      if (parsed.race?.id === "elf") setScreen("elf_scenario");
+      else if (parsed.race?.id === "tenebrim") setScreen("tenebrim_survival");
+      else if (parsed.cls?.id === "merchant") setScreen("equar_scenario");
+      else setScreen(parsed.race?.id === "devil" && !parsed.nobleQuestActive ? "underworld" : "overworld");
       setTab("map");
       notify("Save loaded successfully!", "#3ec995");
     } catch (err) { notify("Invalid save data.", "#d84838"); }
@@ -337,6 +376,8 @@ export default function App(){
     
     // ADD THIS LINE TO WIPE THE ELF SCENARIO MEMORY:
     localStorage.removeItem("aleria_elf_save"); 
+    // Tenebrim addition: wipe standalone Tenebrim run state when starting a new game.
+    localStorage.removeItem("aleria_tenebrim_save");
     
     setDiff(DIFFS[1]); setRace(null); setOrigin(null); setCls(null); setTenebrimStart(null);
     setStats({hp:100,maxHp:100,mp:60,maxMp:60,stamina:80,maxStamina:80});
@@ -356,7 +397,7 @@ export default function App(){
     setSiphonNodes([]); setSiphonScore(0); setSiphonActive(false); setSiphonTime(30); setSiphonResult(null);
     setSlaveTask(null); setSlaveProgress(0); setSlaveDay(0); setEscapeReady(false);
     setCraftMats({metal:0,herb:0}); setCityLevel({pump:0,walls:0}); setCraftedShop([]);
-    setScreen("difficulty");
+    setScreen("race");
   }
 
   function returnToMenu(){
@@ -388,7 +429,12 @@ export default function App(){
   function pickDiff(d){
     if(d.locked&&progress.cleared<d.unlockReq){notify(`Defeat ${d.unlockReq} Doomsday to unlock.`,"#9a6c10");return;}
     if (window.SFX && window.SFX.menuSelect) window.SFX.menuSelect();
-    setDiff(d);setScreen("race");
+    // FIX: Difficulty AFTER race choice now leads to next race-specific step
+    setDiff(d);
+    if (race?.id === "devil") { setSpells(DEVIL_SPELLS.map(s => ({ ...s }))); setScreen("devil_intro"); }
+    else if (race?.id === "tenebrim") { setScreen("ten_origin"); }
+    else if (race?.id === "elf") { setScreen("elf_scenario"); }
+    else { setScreen("origin"); }
   }
 
   function pickRace(r){
@@ -398,10 +444,8 @@ export default function App(){
     setRace(r);
     setStats({ hp: 100 + (r.hpBonus || 0), maxHp: 100 + (r.hpBonus || 0), mp: 60 + (r.mpBonus || 0), maxMp: 60 + (r.mpBonus || 0), stamina: 80, maxStamina: 80 });
 
-    if(r.id === "devil"){ setSpells(DEVIL_SPELLS.map(s => ({ ...s }))); setScreen("devil_intro"); } 
-    else if(r.id === "tenebrim"){ setScreen("ten_origin"); } 
-    else if(r.id === "elf"){ setScreen("elf_scenario"); } 
-    else { setScreen("origin"); }
+    // FIX: After race, ask for difficulty (instead of going straight to origin/intro)
+    setScreen("difficulty");
   }
 
   function pickOrigin(o){
@@ -414,7 +458,9 @@ export default function App(){
 
   function pickClass(c){
     if (window.SFX && window.SFX.menuSelect) window.SFX.menuSelect();
-    setCls(c);setScreen("intro");
+    setCls(c);
+    if (c.id === "merchant") { setScreen("equar_scenario"); }
+    else { setScreen("intro"); }
   }
 
   function beginGame(){
@@ -710,6 +756,8 @@ function startSlaverCombat(isBoss) {
       if(cls?.id==="hunter"){const ns=Math.min(5,Math.floor((xp+totalXp)/300)+1);if(ns>hunterStars){setHunterStars(ns);SFX.rankup();notify(`Hunter ★${ns}`,"#3ec995");}}
       if(fs.hp<=fs.maxHp*0.15){const nc=nearDeathWins+1;setNearDeathWins(nc);if(nc>=3&&!techniqueUnlocked){setTechniqueUnlocked(true);notify("Technique stirs.","#9a6c10");}}
     }else if(diff?.perma){addLog("Permadeath: progress lost.","sys");setTimeout(returnToMenu,2000);}
+    // FIX: Auto-save after combat
+    setTimeout(() => { try { exportSave(true); } catch(e){} }, 500);
   }
 
   function startSiphon(){const nodes=Array.from({length:6},(_,i)=>({id:i,level:Math.random()*30+10,rising:Math.random()*1.8+1.0+doomsday*0.15}));setSiphonNodes(nodes);setSiphonScore(0);setSiphonActive(true);setSiphonTime(30);setSiphonResult(null);setScreen("siphon");}
@@ -916,16 +964,30 @@ function startSlaverCombat(isBoss) {
   }
   function qteInput(dir){
     if(!qteActive)return;
-    if(dir===qteSequence[qteIdx]){
-      if(qteIdx+1>=qteSequence.length){setQteActive(false);addLog("Evaded!","heal");SFX.spell();setLumenCombatPhase("player");}
-      else setQteIdx(i=>i+1);
-    }else{
+    if(dir==="FAIL" || dir !== qteSequence[qteIdx]){
       setQteActive(false);
       const dmg=Math.max(1,42+Math.floor(Math.random()*15)-getBonusDef());
       setStats(s=>({...s,hp:Math.max(0,s.hp-dmg)}));
-      addLog(`Spears: ${dmg}.`,"dmg");SFX.hit();setLumenCombatPhase("player");
+      addLog(dir === "FAIL" ? `Too slow! Spears: ${dmg}.` : `Spears: ${dmg}.`,"dmg");
+      SFX.hit();setLumenCombatPhase("player");
+    } else {
+      if(qteIdx+1>=qteSequence.length){setQteActive(false);addLog("Evaded!","heal");SFX.spell();setLumenCombatPhase("player");}
+      else { setQteIdx(i=>i+1); setLumenQteTime(100); } // Reset timer on correct key
     }
   }
+
+  // NEW: The actual timer logic!
+  useEffect(() => {
+    if (!qteActive || screen !== "lumenari") return;
+    const tick = setInterval(() => {
+       setLumenQteTime(prev => {
+          if (prev <= 5) { qteInput("FAIL"); return 100; }
+          return prev - 5; // Drains the bar
+       });
+    }, 100);
+    return () => clearInterval(tick);
+  }, [qteActive, screen]);
+
   useEffect(()=>{
     if(!qteActive)return;
     const h=(e)=>{if(e.key==="ArrowLeft")qteInput("←");else if(e.key==="ArrowRight")qteInput("→");else if(e.key==="ArrowUp")qteInput("↑");else if(e.key==="ArrowDown")qteInput("↓");};
@@ -934,13 +996,29 @@ function startSlaverCombat(isBoss) {
   function attackGolem(idx){if(lumenCombatPhase!=="player"||qteActive)return;const ng=[...golems];const dmg=Math.max(1,getBonusAtk()+Math.floor(Math.random()*12)+8);ng[idx]={...ng[idx],hp:Math.max(0,ng[idx].hp-dmg)};addLog(`Golem ${idx+1}: ${dmg}.`,"dmg");SFX.attack();setGolems(ng);}
 
   async function continueAfterLumen(){
-    setShowVictory(false);setPostDoomsday(true);
-    const cleared=doomsdaysCleared+1;setDoomsdaysCleared(cleared);
-    const np={...progress,cleared:Math.max(progress.cleared,cleared)};setProgress(np);await saveProg(np);
-    setDoomsday(0);setDoomsdayTriggered(false);
+    setShowVictory(false);
+    setPostDoomsday(true);
+    const cleared=doomsdaysCleared+1;
+    setDoomsdaysCleared(cleared);
+    const np={...progress,cleared:Math.max(progress.cleared,cleared)};
+    setProgress(np);
+    await saveProg(np);
+    setDoomsday(0);
+    setDoomsdayTriggered(false);
     setStats(s=>({...s,hp:s.maxHp,mp:s.maxMp,stamina:s.maxStamina}));
+    
+    // FIX: Noble Reward triggers HERE so the player sees it!
+    if(nobleQuestActive) { 
+        setBronze(b=>b+20000); 
+        notify("Noble Quest Completed: +20,000 B!","#ffd966"); 
+        setNobleQuestActive(false); 
+    }
+
     addLog("The Doomsday is past.","sys");
-    setScreen(race?.id==="devil"&&!leftUnderworld?"underworld":"overworld");setTab("map");
+    
+    // FIX: Send Devil back to Underworld if they want, or Overworld
+    setScreen(race?.id==="devil" ? "underworld" : "overworld");
+    setTab("map");
   }
 
   const BG="linear-gradient(160deg,#0a0814 0%,#100e1d 50%,#0d0b1a 100%)";
@@ -974,8 +1052,30 @@ function startSlaverCombat(isBoss) {
           
           <div style={{display: "flex", flexDirection: "column", gap: 20, width: "320px", margin: "0 auto"}}>
             
+            {/* --- CONTINUE BUTTON (resume last save) --- */}
+            {(() => {
+              const hasSave = !!localStorage.getItem("aleria_save_slot") || !!localStorage.getItem("aleria_elf_save");
+              return hasSave ? (
+                <div 
+                  data-testid="main-menu-continue-btn"
+                  onClick={importSave} 
+                  style={{ position: "relative", height: "60px", cursor: "pointer", transition: "transform 0.2s" }}
+                  onMouseOver={(e) => e.currentTarget.style.transform = "scale(1.05)"} 
+                  onMouseOut={(e) => e.currentTarget.style.transform = "scale(1)"}
+                >
+                  <div style={{ position: "absolute", inset: 0, border: "2px solid rgba(135, 206, 250, 0.9)", boxShadow: "0 0 25px rgba(62, 201, 149, 0.5), inset 0 0 15px rgba(135, 206, 250, 0.4)", background: "linear-gradient(180deg, #4dd9c2 0%, #2a8f87 100%)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <span style={{ fontFamily: "Arial, sans-serif", fontSize: 20, fontWeight: 800, color: "#0a1a18", letterSpacing: "0.05em" }}>Continue</span>
+                  </div>
+                  <div style={{ position: "absolute", inset: "4px", border: "1px solid rgba(255, 255, 255, 0.7)", pointerEvents: "none" }} />
+                  <div style={{ position: "absolute", left: "-7px", top: "50%", transform: "translateY(-50%) rotate(45deg)", width: "14px", height: "14px", background: "#080310", borderRight: "2px solid rgba(135, 206, 250, 0.9)", borderTop: "2px solid rgba(135, 206, 250, 0.9)", zIndex: 2 }} />
+                  <div style={{ position: "absolute", right: "-7px", top: "50%", transform: "translateY(-50%) rotate(45deg)", width: "14px", height: "14px", background: "#080310", borderLeft: "2px solid rgba(135, 206, 250, 0.9)", borderBottom: "2px solid rgba(135, 206, 250, 0.9)", zIndex: 2 }} />
+                </div>
+              ) : null;
+            })()}
+            
             {/* --- GOLDEN "NEW GAME" BUTTON --- */}
             <div 
+              data-testid="main-menu-newgame-btn"
               onClick={startNewGame} 
               style={{ position: "relative", height: "60px", cursor: "pointer", transition: "transform 0.2s" }}
               onMouseOver={(e) => e.currentTarget.style.transform = "scale(1.05)"} 
@@ -985,31 +1085,41 @@ function startSlaverCombat(isBoss) {
               <div style={{ position: "absolute", inset: 0, border: "2px solid rgba(255, 230, 150, 0.9)", boxShadow: "0 0 20px rgba(224, 165, 35, 0.4), inset 0 0 15px rgba(255, 230, 150, 0.5)", background: "linear-gradient(180deg, #fcebaf 0%, #d49830 100%)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <span style={{ fontFamily: "Arial, sans-serif", fontSize: 20, fontWeight: 800, color: "#1a1005", letterSpacing: "0.05em" }}>New Game</span>
               </div>
-              {/* Inner Highlight Line */}
               <div style={{ position: "absolute", inset: "4px", border: "1px solid rgba(255, 255, 255, 0.7)", pointerEvents: "none" }} />
-              {/* Left Notch */}
               <div style={{ position: "absolute", left: "-7px", top: "50%", transform: "translateY(-50%) rotate(45deg)", width: "14px", height: "14px", background: "#080310", borderRight: "2px solid rgba(255, 230, 150, 0.9)", borderTop: "2px solid rgba(255, 230, 150, 0.9)", zIndex: 2 }} />
-              {/* Right Notch */}
               <div style={{ position: "absolute", right: "-7px", top: "50%", transform: "translateY(-50%) rotate(45deg)", width: "14px", height: "14px", background: "#080310", borderLeft: "2px solid rgba(255, 230, 150, 0.9)", borderBottom: "2px solid rgba(255, 230, 150, 0.9)", zIndex: 2 }} />
             </div>
             
             {/* --- PURPLE "LOAD SAVE" BUTTON --- */}
             <div 
+              data-testid="main-menu-load-btn"
               onClick={importSave} 
               style={{ position: "relative", height: "60px", cursor: "pointer", transition: "transform 0.2s" }}
               onMouseOver={(e) => e.currentTarget.style.transform = "scale(1.05)"} 
               onMouseOut={(e) => e.currentTarget.style.transform = "scale(1)"}
             >
-              {/* Main Body */}
               <div style={{ position: "absolute", inset: 0, border: "2px solid rgba(160, 150, 220, 0.8)", boxShadow: "0 0 20px rgba(100, 90, 180, 0.4), inset 0 0 15px rgba(160, 150, 220, 0.3)", background: "linear-gradient(180deg, #6c639f 0%, #3b3169 100%)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <span style={{ fontFamily: "Arial, sans-serif", fontSize: 20, fontWeight: 800, color: "#fff", letterSpacing: "0.05em", textShadow: "0 2px 4px rgba(0,0,0,0.6)" }}>Load Save Game</span>
+                <span style={{ fontFamily: "Arial, sans-serif", fontSize: 20, fontWeight: 800, color: "#fff", letterSpacing: "0.05em", textShadow: "0 2px 4px rgba(0,0,0,0.6)" }}>Load Save</span>
               </div>
-              {/* Inner Highlight Line */}
               <div style={{ position: "absolute", inset: "4px", border: "1px solid rgba(255, 255, 255, 0.15)", pointerEvents: "none" }} />
-              {/* Left Notch */}
               <div style={{ position: "absolute", left: "-7px", top: "50%", transform: "translateY(-50%) rotate(45deg)", width: "14px", height: "14px", background: "#080310", borderRight: "2px solid rgba(160, 150, 220, 0.8)", borderTop: "2px solid rgba(160, 150, 220, 0.8)", zIndex: 2 }} />
-              {/* Right Notch */}
               <div style={{ position: "absolute", right: "-7px", top: "50%", transform: "translateY(-50%) rotate(45deg)", width: "14px", height: "14px", background: "#080310", borderLeft: "2px solid rgba(160, 150, 220, 0.8)", borderBottom: "2px solid rgba(160, 150, 220, 0.8)", zIndex: 2 }} />
+            </div>
+
+            {/* --- SETTINGS BUTTON --- */}
+            <div 
+              data-testid="main-menu-settings-btn"
+              onClick={() => { if(window.SFX && window.SFX.menuSelect) window.SFX.menuSelect(); setShowSettings(true); }} 
+              style={{ position: "relative", height: "60px", cursor: "pointer", transition: "transform 0.2s" }}
+              onMouseOver={(e) => e.currentTarget.style.transform = "scale(1.05)"} 
+              onMouseOut={(e) => e.currentTarget.style.transform = "scale(1)"}
+            >
+              <div style={{ position: "absolute", inset: 0, border: "2px solid rgba(180, 180, 180, 0.6)", boxShadow: "0 0 18px rgba(120, 120, 140, 0.3), inset 0 0 14px rgba(180, 180, 180, 0.2)", background: "linear-gradient(180deg, #3a3a4a 0%, #1a1a26 100%)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <span style={{ fontFamily: "Arial, sans-serif", fontSize: 20, fontWeight: 800, color: "#fff", letterSpacing: "0.05em", textShadow: "0 2px 4px rgba(0,0,0,0.6)" }}>Settings</span>
+              </div>
+              <div style={{ position: "absolute", inset: "4px", border: "1px solid rgba(255, 255, 255, 0.12)", pointerEvents: "none" }} />
+              <div style={{ position: "absolute", left: "-7px", top: "50%", transform: "translateY(-50%) rotate(45deg)", width: "14px", height: "14px", background: "#080310", borderRight: "2px solid rgba(180, 180, 180, 0.6)", borderTop: "2px solid rgba(180, 180, 180, 0.6)", zIndex: 2 }} />
+              <div style={{ position: "absolute", right: "-7px", top: "50%", transform: "translateY(-50%) rotate(45deg)", width: "14px", height: "14px", background: "#080310", borderLeft: "2px solid rgba(180, 180, 180, 0.6)", borderBottom: "2px solid rgba(180, 180, 180, 0.6)", zIndex: 2 }} />
             </div>
 
           </div>
@@ -1030,21 +1140,22 @@ function startSlaverCombat(isBoss) {
         </div>
         
         <div style={{display: "flex", flexDirection: "column", gap: 16}}>
-          <div onClick={() => pickDiff({id: "easy", goldMult: 1.5, enemies: 1, perma: false})} style={{ position: "relative", background: "linear-gradient(180deg, rgba(40,20,60,0.8) 0%, rgba(20,10,35,0.9) 100%)", border: "1px solid rgba(123, 111, 228, 0.3)", borderRadius: 12, padding: "24px", cursor: "pointer", boxShadow: "0 4px 20px rgba(0,0,0,0.5)", transition: "all 0.2s" }} onMouseOver={(e) => { e.currentTarget.style.transform = "scale(1.02)"; e.currentTarget.style.border = "1px solid rgba(123, 111, 228, 0.8)"; e.currentTarget.style.boxShadow = "0 0 25px rgba(123,111,228,0.2)"; }} onMouseOut={(e) => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.border = "1px solid rgba(123, 111, 228, 0.3)"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.5)"; }}>
+          <div data-testid="diff-easy" onClick={() => pickDiff(DIFFS[0])} style={{ position: "relative", background: "linear-gradient(180deg, rgba(40,20,60,0.8) 0%, rgba(20,10,35,0.9) 100%)", border: "1px solid rgba(123, 111, 228, 0.3)", borderRadius: 12, padding: "24px", cursor: "pointer", boxShadow: "0 4px 20px rgba(0,0,0,0.5)", transition: "all 0.2s" }} onMouseOver={(e) => { e.currentTarget.style.transform = "scale(1.02)"; e.currentTarget.style.border = "1px solid rgba(123, 111, 228, 0.8)"; e.currentTarget.style.boxShadow = "0 0 25px rgba(123,111,228,0.2)"; }} onMouseOut={(e) => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.border = "1px solid rgba(123, 111, 228, 0.3)"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.5)"; }}>
             <div style={{display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12}}>
               <h3 style={{fontSize: 22, fontWeight: 800, color: "#fff", margin: 0}}>Easy</h3>
+              <span style={{background: "rgba(62,201,149,0.15)", border: "1px solid rgba(62,201,149,0.5)", color: "#3ec995", fontSize: 11, padding: "4px 10px", borderRadius: 20, fontWeight: 700}}>+50% GOLD</span>
             </div>
             <p style={{fontSize: 14, color: "rgba(255,255,255,0.6)", margin: 0}}>Reduced enemy damage, faster gold. Single enemies.</p>
           </div>
 
-          <div onClick={() => pickDiff({id: "normal", goldMult: 1, enemies: 2, perma: false})} style={{ position: "relative", background: "linear-gradient(180deg, rgba(40,20,60,0.8) 0%, rgba(20,10,35,0.9) 100%)", border: "1px solid rgba(123, 111, 228, 0.3)", borderRadius: 12, padding: "24px", cursor: "pointer", boxShadow: "0 4px 20px rgba(0,0,0,0.5)", transition: "all 0.2s" }} onMouseOver={(e) => { e.currentTarget.style.transform = "scale(1.02)"; e.currentTarget.style.border = "1px solid rgba(123, 111, 228, 0.8)"; e.currentTarget.style.boxShadow = "0 0 25px rgba(123,111,228,0.2)"; }} onMouseOut={(e) => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.border = "1px solid rgba(123, 111, 228, 0.3)"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.5)"; }}>
+          <div data-testid="diff-normal" onClick={() => pickDiff(DIFFS[1])} style={{ position: "relative", background: "linear-gradient(180deg, rgba(40,20,60,0.8) 0%, rgba(20,10,35,0.9) 100%)", border: "1px solid rgba(123, 111, 228, 0.3)", borderRadius: 12, padding: "24px", cursor: "pointer", boxShadow: "0 4px 20px rgba(0,0,0,0.5)", transition: "all 0.2s" }} onMouseOver={(e) => { e.currentTarget.style.transform = "scale(1.02)"; e.currentTarget.style.border = "1px solid rgba(123, 111, 228, 0.8)"; e.currentTarget.style.boxShadow = "0 0 25px rgba(123,111,228,0.2)"; }} onMouseOut={(e) => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.border = "1px solid rgba(123, 111, 228, 0.3)"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.5)"; }}>
             <div style={{display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12}}>
               <h3 style={{fontSize: 22, fontWeight: 800, color: "#fff", margin: 0}}>Normal</h3>
             </div>
             <p style={{fontSize: 14, color: "rgba(255,255,255,0.6)", margin: 0}}>Standard balance. Two enemies per fight.</p>
           </div>
 
-          <div onClick={() => pickDiff({id: "hard", goldMult: 0.8, enemies: 2, perma: true})} style={{ position: "relative", background: "linear-gradient(180deg, rgba(40,20,60,0.8) 0%, rgba(20,10,35,0.9) 100%)", border: "1px solid rgba(123, 111, 228, 0.3)", borderRadius: 12, padding: "24px", cursor: "pointer", boxShadow: "0 4px 20px rgba(0,0,0,0.5)", transition: "all 0.2s" }} onMouseOver={(e) => { e.currentTarget.style.transform = "scale(1.02)"; e.currentTarget.style.border = "1px solid rgba(123, 111, 228, 0.8)"; e.currentTarget.style.boxShadow = "0 0 25px rgba(123,111,228,0.2)"; }} onMouseOut={(e) => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.border = "1px solid rgba(123, 111, 228, 0.3)"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.5)"; }}>
+          <div data-testid="diff-hard" onClick={() => pickDiff(DIFFS[2])} style={{ position: "relative", background: "linear-gradient(180deg, rgba(40,20,60,0.8) 0%, rgba(20,10,35,0.9) 100%)", border: "1px solid rgba(123, 111, 228, 0.3)", borderRadius: 12, padding: "24px", cursor: "pointer", boxShadow: "0 4px 20px rgba(0,0,0,0.5)", transition: "all 0.2s" }} onMouseOver={(e) => { e.currentTarget.style.transform = "scale(1.02)"; e.currentTarget.style.border = "1px solid rgba(123, 111, 228, 0.8)"; e.currentTarget.style.boxShadow = "0 0 25px rgba(123,111,228,0.2)"; }} onMouseOut={(e) => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.border = "1px solid rgba(123, 111, 228, 0.3)"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.5)"; }}>
             <div style={{display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12}}>
               <h3 style={{fontSize: 22, fontWeight: 800, color: "#fff", margin: 0}}>Hard</h3>
               <span style={{background: "rgba(184, 58, 42, 0.15)", border: "1px solid rgba(184, 58, 42, 0.5)", color: "#e85c3a", fontSize: 11, padding: "4px 10px", borderRadius: 20, fontWeight: 700, letterSpacing: "0.05em"}}>PERMADEATH</span>
@@ -1052,18 +1163,18 @@ function startSlaverCombat(isBoss) {
             <p style={{fontSize: 14, color: "rgba(255,255,255,0.6)", margin: 0}}>Less gold, tougher enemies, two per fight. Permadeath.</p>
           </div>
 
-          <div onClick={() => { if(progress.cleared > 0) pickDiff({id: "insanity", goldMult: 0.5, enemies: 3, perma: true}); }} style={{ position: "relative", background: "linear-gradient(180deg, rgba(40,20,60,0.8) 0%, rgba(20,10,35,0.9) 100%)", border: "1px solid rgba(123, 111, 228, 0.3)", borderRadius: 12, padding: "24px", cursor: progress.cleared > 0 ? "pointer" : "not-allowed", opacity: progress.cleared > 0 ? 1 : 0.5, boxShadow: "0 4px 20px rgba(0,0,0,0.5)", transition: "all 0.2s" }} onMouseOver={(e) => { if(progress.cleared > 0) { e.currentTarget.style.transform = "scale(1.02)"; e.currentTarget.style.border = "1px solid rgba(123, 111, 228, 0.8)"; e.currentTarget.style.boxShadow = "0 0 25px rgba(123,111,228,0.2)"; } }} onMouseOut={(e) => { if(progress.cleared > 0) { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.border = "1px solid rgba(123, 111, 228, 0.3)"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.5)"; } }}>
+          <div data-testid="diff-insanity" onClick={() => { if(progress.cleared > 0) pickDiff(DIFFS[3]); else notify(`Defeat the Lumenari to unlock Insanity.`, "#9a6c10"); }} style={{ position: "relative", background: "linear-gradient(180deg, rgba(40,20,60,0.8) 0%, rgba(20,10,35,0.9) 100%)", border: "1px solid rgba(123, 111, 228, 0.3)", borderRadius: 12, padding: "24px", cursor: progress.cleared > 0 ? "pointer" : "not-allowed", opacity: progress.cleared > 0 ? 1 : 0.5, boxShadow: "0 4px 20px rgba(0,0,0,0.5)", transition: "all 0.2s" }} onMouseOver={(e) => { if(progress.cleared > 0) { e.currentTarget.style.transform = "scale(1.02)"; e.currentTarget.style.border = "1px solid rgba(123, 111, 228, 0.8)"; e.currentTarget.style.boxShadow = "0 0 25px rgba(123,111,228,0.2)"; } }} onMouseOut={(e) => { if(progress.cleared > 0) { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.border = "1px solid rgba(123, 111, 228, 0.3)"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.5)"; } }}>
             <div style={{display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12}}>
               <h3 style={{fontSize: 22, fontWeight: 800, color: "#fff", margin: 0}}>Insanity</h3>
-              <span style={{background: "rgba(184, 58, 42, 0.15)", border: "1px solid rgba(184, 58, 42, 0.5)", color: "#e85c3a", fontSize: 11, padding: "4px 10px", borderRadius: 20, fontWeight: 700, letterSpacing: "0.05em"}}>PERMADEATH</span>
+              <span style={{background: "rgba(184, 58, 42, 0.15)", border: "1px solid rgba(184, 58, 42, 0.5)", color: "#e85c3a", fontSize: 11, padding: "4px 10px", borderRadius: 20, fontWeight: 700, letterSpacing: "0.05em"}}>PERMADEATH · LOCKED</span>
             </div>
             <p style={{fontSize: 14, color: "rgba(255,255,255,0.6)", margin: 0}}>Three enemies, much harder. Permadeath. Defeat the Lumenari to unlock.</p>
           </div>
         </div>
         
         <div style={{textAlign: "center", marginTop: 30}}>
-          <button onClick={() => { if(window.SFX && window.SFX.menuBack) window.SFX.menuBack(); setScreen("main_menu"); }} style={{background: "transparent", border: "none", color: "rgba(255,255,255,0.5)", fontSize: 14, cursor: "pointer", padding: "10px", transition: "color 0.2s"}} onMouseOver={(e) => e.target.style.color = "#fff"} onMouseOut={(e) => e.target.style.color = "rgba(255,255,255,0.5)"}>
-            ← Back
+          <button onClick={() => { if(window.SFX && window.SFX.menuBack) window.SFX.menuBack(); setScreen("race"); }} style={{background: "transparent", border: "none", color: "rgba(255,255,255,0.5)", fontSize: 14, cursor: "pointer", padding: "10px", transition: "color 0.2s"}} onMouseOver={(e) => e.target.style.color = "#fff"} onMouseOut={(e) => e.target.style.color = "rgba(255,255,255,0.5)"}>
+            ← Back to Race Selection
           </button>
         </div>
 
@@ -1078,7 +1189,7 @@ function startSlaverCombat(isBoss) {
         
         <div style={{textAlign: "center", marginBottom: 40}}>
           <h2 style={{fontSize: 42, fontWeight: 900, color: "#fff", textShadow: "0 0 20px rgba(255,255,255,0.5)", marginBottom: 10}}>Choose your race</h2>
-          <p style={{fontSize: 12, color: "rgba(255,255,255,0.4)", letterSpacing: "0.2em", textTransform: "uppercase", fontWeight: 600}}>DIFFICULTY</p>
+          <p style={{fontSize: 12, color: "rgba(255,255,255,0.4)", letterSpacing: "0.2em", textTransform: "uppercase", fontWeight: 600}}>Difficulty will be chosen next</p>
         </div>
         
         <div style={{display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 20}}>
@@ -1140,7 +1251,7 @@ function startSlaverCombat(isBoss) {
           }} style={{ position: "relative", background: "linear-gradient(180deg, rgba(40,20,60,0.8) 0%, rgba(20,10,35,0.9) 100%)", border: "1px solid rgba(135, 206, 250, 0.4)", borderRadius: 12, padding: "24px", cursor: "pointer", boxShadow: "0 4px 20px rgba(0,0,0,0.5)", transition: "all 0.2s", display: "flex", flexDirection: "column" }} onMouseOver={(e) => { e.currentTarget.style.transform = "scale(1.02)"; e.currentTarget.style.border = "1px solid rgba(135, 206, 250, 0.9)"; e.currentTarget.style.boxShadow = "0 0 30px rgba(135,206,250,0.3)"; }} onMouseOut={(e) => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.border = "1px solid rgba(135, 206, 250, 0.4)"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.5)"; }}>
             <div style={{display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12}}>
               <h3 style={{fontSize: 22, fontWeight: 800, color: "#fff", margin: 0}}>Elf</h3>
-              <span style={{color: "#87cefa", fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", background: "rgba(135,206,250,0.15)", padding: "2px 6px", borderRadius: 4}}>DEV UNLOCKED</span>
+              <span style={{color: "#87cefa", fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", background: "rgba(135,206,250,0.15)", padding: "2px 6px", borderRadius: 4}}>FROSTPUNK-ESQUE</span>
             </div>
             <p style={{fontSize: 14, color: "rgba(255,255,255,0.8)", margin: "0 0 8px 0"}}>A harsh Frostpunk-style survival scenario.</p>
             <p style={{fontSize: 13, color: "rgba(255,255,255,0.4)", fontStyle: "italic", margin: "0 0 16px 0", flex: 1}}>Unique technology and survival mechanics.</p>
@@ -1149,8 +1260,8 @@ function startSlaverCombat(isBoss) {
         </div>
         
         <div style={{textAlign: "center", marginTop: 40}}>
-          <button onClick={() => { if(window.SFX && window.SFX.menuBack) window.SFX.menuBack(); setScreen("difficulty"); }} style={{background: "transparent", border: "none", color: "rgba(255,255,255,0.5)", fontSize: 14, cursor: "pointer", padding: "10px", transition: "color 0.2s"}} onMouseOver={(e) => e.target.style.color = "#fff"} onMouseOut={(e) => e.target.style.color = "rgba(255,255,255,0.5)"}>
-            ← Back
+          <button onClick={() => { if(window.SFX && window.SFX.menuBack) window.SFX.menuBack(); setScreen("main_menu"); }} style={{background: "transparent", border: "none", color: "rgba(255,255,255,0.5)", fontSize: 14, cursor: "pointer", padding: "10px", transition: "color 0.2s"}} onMouseOver={(e) => e.target.style.color = "#fff"} onMouseOut={(e) => e.target.style.color = "rgba(255,255,255,0.5)"}>
+            ← Back to Main Menu
           </button>
         </div>
 
@@ -1172,7 +1283,17 @@ if(showVictory)return <div style={{minHeight:"100vh",background:"linear-gradient
   </div></div>;
 
 if (screen === "elf_scenario") {
-    return <ElfScenario setScreen={setScreen} notify={notify} exportSave={exportSave} stats={stats} setStats={setStats} />;
+    return <ElfScenario setScreen={setScreen} notify={notify} exportSave={exportSave} stats={stats} setStats={setStats} diff={diff} />;
+  }
+
+if (screen === "devil_scenario") {
+      return <DevilScenario setScreen={setScreen} stats={stats} setStats={setStats} notify={notify} bronze={bronze} setBronze={setBronze} />;
+  }
+  if (screen === "equar_scenario") {
+      return <EquarScenario setScreen={setScreen} bronze={bronze} setBronze={setBronze} notify={notify} />
+  }
+  if (screen === "tenebrim_survival") {
+      return <TenebrimScenario setScreen={setScreen} notify={notify} stats={stats} setStats={setStats} diff={diff} exportSave={exportSave} />;
   }
 
   if(screen==="devil_intro")return <div style={{minHeight:"100vh",background:"linear-gradient(160deg,#0a0a14,#0f0e1c)",padding:"2.5rem 1.5rem"}}><div style={{maxWidth:560,margin:"0 auto"}}>
@@ -1387,6 +1508,27 @@ if (screen === "elf_scenario") {
             </div>
           </div>
 
+{/* Class Selection Block in App.jsx */}
+<div style={{ display: "flex", gap: 10, justifyContent: "center", marginBottom: 20 }}>
+  {CLASSES.map(c => {
+  // FIX: Hide the Merchant class if the chosen race isn't Equar
+  if (c.id === "merchant" && race?.id !== "equar") return null;
+  
+  return (
+    <Btn 
+      key={c.id} 
+      variant={cls?.id === c.id ? "primary" : "ghost"} 
+      onClick={() => { 
+        if (window.SFX && window.SFX.menuSelect) window.SFX.menuSelect(); 
+        setCls(c); 
+      }}
+    >
+      {c.name}
+    </Btn>
+  );
+})}
+</div>
+
         </div>
         
         {/* Back Button FIX: Vi skickar dig tillbaka till origin istället för race */}
@@ -1444,15 +1586,16 @@ if (screen === "elf_scenario") {
 
   // ── Overworld + Underworld shared shell ───────────────────────────────
   const isOver=["overworld","shop","spells","skills","church","guild","sleep","craft","gamble", "training", "endgame", "tenebrim_survival"].includes(screen);
-if (race?.id === "elf") {
-  return <ElfScenario setScreen={setScreen} notify={notify} exportSave={exportSave} stats={stats} setStats={setStats} />;
-}
+
   const isUw=screen==="underworld";
   if(isOver||isUw){
     const dd=doomsday;const ddPct=Math.round((dd/10)*100);const ddCol=dd<4?"#3ec995":dd<7?"#e0a523":"#e85c3a";
     const housingOpt=SLEEP.find(o=>o.id===housing);
     
-    const tabs=isUw?[{id:"map",label:"Map"},{id:"shop",label:"Shop"},{id:"spells",label:"Spells"},{id:"city",label:"City"}]:(
+    const tabs=isUw ? [
+        {id:"map",label:"Map"},{id:"shop",label:"Shop"},{id:"spells",label:"Spells"},{id:"city",label:"City"},
+        ...(postDoomsday ? [{id:"overworld",label:"Surface ↗"}] : []) // NEW: Travel up
+      ] : (
       race?.id === "tenebrim" ? [
         {id:"tenebrim_survival", label:"The Wilds"},
         {id:"training", label:"Physical Training"}
@@ -1463,8 +1606,9 @@ if (race?.id === "elf") {
         ...(race?.id !== "tenebrim" ? [{id:"church",label:"Church"}] : []),
         ...(cls?.id==="adventurer"?[{id:"guild",label:"Guild"}]:[]),
         ...((cls?.id==="merchant"||(postDoomsday&&race?.canMerchant))?[{id:"craft",label:"Craft"}]:[]),
-        ...((postDoomsday||race?.canGamble||race?.canMerchant||race?.id==="equar")?[{id:"gamble",label:"Gamble"}]:[]),
-        ...(postDoomsday?[{id:"endgame",label:"Endgame"}]:[])
+        ...(!isUw ? [{id:"gamble",label:"Gamble"}] : (postDoomsday||race?.canGamble||race?.canMerchant)?[{id:"gamble",label:"Gamble"}]:[]),
+        ...(postDoomsday?[{id:"endgame",label:"Endgame"}]:[]),
+        ...(postDoomsday && race?.id === "devil" ? [{id:"underworld",label:"Underworld ↘"}] : []) // NEW: Travel down
       ]
     );
     return <div style={{minHeight:"100vh",background:isUw?"linear-gradient(160deg,#0a0a14,#0f0e1c)":BG,fontFamily:"var(--font-sans)"}}>
@@ -1501,8 +1645,8 @@ if (race?.id === "elf") {
           {!race?.canSpell && physicalLevel > 0 && <Tag color="#e0a523">Phys Lvl {physicalLevel}</Tag>}
           {isUw&&<Tag color="#e0a523">Rep {devilRep}/8</Tag>}
           {!isUw&&<><span>{xp} XP</span>{cls?.id==="adventurer"&&hasBadge&&<Tag color="#e0a523">{RANKS[advRankIdx]}</Tag>}{cls?.id==="hunter"&&<Tag color="#7c6fd4">★{hunterStars} Hunter</Tag>}</>}
-          <Btn small variant="ghost" onClick={exportSave}>Save Game</Btn>
-          <Btn small variant="ghost" onClick={returnToMenu}>Menu</Btn>
+          <Btn small variant="ghost" data-testid="overworld-save-btn" onClick={exportSave}>Save Game</Btn>
+          <Btn small variant="ghost" data-testid="overworld-menu-btn" onClick={returnToMenu}>☰ Menu</Btn>
         </div>
       </div>
       <div style={{padding:"6px 12px",background:"rgba(0,0,0,0.25)"}}><CoinBar bronze={bronze}/></div>
@@ -1568,7 +1712,7 @@ if (race?.id === "elf") {
         {screen==="church"&&<ChurchView race={race} bronze={bronze} churchCost={churchCost} unlockedSkills={unlockedSkills} revealedSkills={revealedSkills} visitChurch={visitChurch} leftUnderworld={leftUnderworld}/>}
         {screen==="guild"&&<GuildView advRankIdx={advRankIdx} hasBadge={hasBadge} xp={xp} daysSinceContract={daysSinceContract} RANKS={RANKS} RANK_MULT={RANK_MULT} RANK_THRESHOLDS={RANK_THRESHOLDS} GRACE={GRACE} />}
         {screen==="sleep"&&<SleepView housing={housing} chooseHousing={chooseHousing} bronze={bronze} ownsHouse={ownsHouse} buyHouse={buyHouse}/>}
-        {screen==="craft"&&<CraftView bronze={bronze} setBronze={setBronze} craftMats={craftMats} setCraftMats={setCraftMats} setOwnedWeapons={setOwnedWeapons} setPotions={setPotions} notify={notify} setCraftedShop={setCraftedShop}/>}
+        {screen==="craft"&&<CraftView bronze={bronze} setBronze={setBronze} craftMats={craftMats} setCraftMats={setCraftMats} setOwnedWeapons={setOwnedWeapons} setOwnedArmors={setOwnedArmors} setPotions={setPotions} notify={notify} setCraftedShop={setCraftedShop}/>}
         {screen==="gamble"&&<GambleView bronze={bronze} setBronze={setBronze} notify={notify} setTotalEarned={setTotalEarned}/>}
         {isUw&&tab==="city"&&<CityView bronze={bronze} setBronze={setBronze} cityLevel={cityLevel} setCityLevel={setCityLevel} setStats={setStats} notify={notify}/>}
         {/* Nya vyer anropas här */}
@@ -1600,7 +1744,7 @@ if (race?.id === "elf") {
       <div style={{background:"rgba(0,0,0,0.6)",borderBottom:"1px solid rgba(255,255,255,0.1)",padding:"12px 16px",display:"flex",gap:12,alignItems:"center",flexWrap:"wrap",backdropFilter:"blur(8px)"}}>
         <span style={{fontWeight:800,fontSize:13,color:"#e85c3a",letterSpacing:"0.04em"}}>COMBAT</span>
         {combat&&<StarRating stars={highStar} max={highStar}/>}
-        {combatPhase==="player"&&!combatResult&&<div style={{marginLeft:"auto"}}><button className="al-btn flee-btn" onClick={flee} style={{padding:"8px 16px",borderRadius:8,fontWeight:900,cursor:"pointer"}}>FLEE (5%)</button></div>}
+        {combatPhase==="player"&&!combatResult&&<div style={{marginLeft:"auto"}}><button data-testid="combat-flee-btn" className="al-btn flee-btn" onClick={flee} style={{padding:"10px 22px",borderRadius:99,fontWeight:900,cursor:"pointer",fontSize:13,letterSpacing:"0.1em",textTransform:"uppercase",display:"inline-flex",alignItems:"center",gap:8,color:"#ffb8a8",border:"2px solid #e85c3a",background:"linear-gradient(180deg, rgba(232,92,58,0.2) 0%, rgba(120,30,15,0.4) 100%)"}}><span style={{fontSize:15}}>↩</span> Flee <span style={{fontSize:10,opacity:0.7}}>(-5% B)</span></button></div>}
       </div>
 
       <div style={{maxWidth:780,margin:"0 auto",padding:"16px"}}>
@@ -1629,11 +1773,11 @@ if (race?.id === "elf") {
         {combatResult?<div style={{display:"flex",gap:10}}>
           {combatResult==="win"?<Btn variant="success" onClick={()=>{setScreen(combatOrigin);setTab("map");}}>Return</Btn>:<Btn variant="danger" onClick={()=>{if(diff?.perma)startNewGame();else{setStats(s=>({...s,hp:Math.round(s.maxHp*0.4),stamina:Math.round(s.maxStamina*0.5)}));setScreen(combatOrigin);setTab("map");}}}>{diff?.perma?"Return to menu":"Respawn"}</Btn>}
         </div>:combatPhase==="player"?(
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12}}>
-            {ACTIONS.map(a=>{const noSta=a.staminaCost&&stats.stamina<a.staminaCost;const noMp=a.mpCost&&stats.mp<a.mpCost;const dis=!!noSta||!!noMp;return <button key={a.id} disabled={dis} onClick={()=>playerAct(a)} className="action-card" style={{borderColor:a.isSpell?"rgba(168,157,240,0.3)":"rgba(255,255,255,0.15)"}}>
-              <p style={{fontWeight:700,fontSize:14,color:a.isSpell?"#a89df0":a.id==="guard"?"#3ec995":a.id==="heavy"||a.id==="quad_flurry"||a.id==="power_strike"||a.id==="hell_strike"?"#e85c3a":"#d4cbf8",marginBottom:4}}>{a.name}</p>
-              <p style={{fontSize:11,color:"rgba(200,192,248,0.4)",lineHeight:1.5,marginBottom:8}}>{a.desc}</p>
-              <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{a.mpCost>0&&<Tag color="#a89df0">{a.mpCost} MP</Tag>}{a.staminaCost>0&&<Tag color="#3ec995">{a.staminaCost} Sta</Tag>}</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:14,padding:"4px 2px"}}>
+            {ACTIONS.map(a=>{const noSta=a.staminaCost&&stats.stamina<a.staminaCost;const noMp=a.mpCost&&stats.mp<a.mpCost;const dis=!!noSta||!!noMp;return <button data-testid={`combat-action-${a.id}`} key={a.id} disabled={dis} onClick={()=>playerAct(a)} className="action-card" style={{borderColor:a.isSpell?"rgba(168,157,240,0.3)":"rgba(255,255,255,0.15)",padding:"14px 16px",minHeight:90}}>
+              <p style={{fontWeight:700,fontSize:14,color:a.isSpell?"#a89df0":a.id==="guard"?"#3ec995":a.id==="heavy"||a.id==="quad_flurry"||a.id==="power_strike"||a.id==="hell_strike"?"#e85c3a":"#d4cbf8",marginBottom:6}}>{a.name}</p>
+              <p style={{fontSize:11,color:"rgba(200,192,248,0.5)",lineHeight:1.5,marginBottom:10}}>{a.desc}</p>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{a.mpCost>0&&<Tag color="#a89df0">{a.mpCost} MP</Tag>}{a.staminaCost>0&&<Tag color="#3ec995">{a.staminaCost} Sta</Tag>}{a.aoe&&<Tag color="#ff8c00">AoE</Tag>}{a.hits>1&&<Tag color="#a8740c">×{a.hits}</Tag>}</div>
             </button>;})}
           </div>
         ):<p style={{fontSize:12,color:"rgba(200,192,248,0.35)"}}>Enemy acting…</p>}
@@ -1788,10 +1932,16 @@ if (race?.id === "elf") {
             {lumenariPhase===2&&"It hangs in the air. Spears fall from above. (Use arrow keys on keyboard.)"}
             {lumenariPhase===3&&"The ground is gone. Stone golems press in."}
           </p>
-          {qteActive&&<div style={{width:"100%",maxWidth:400,padding:"22px",borderRadius:14,background:"rgba(255,217,102,0.12)",border:"2px solid #ffd966",animation:"qtePulse 0.8s ease infinite",textAlign:"center"}}>
-            <p style={{fontWeight:900,fontSize:16,color:"#ffd966",marginBottom:6,letterSpacing:"0.05em"}}>EVADE</p>
-            <p style={{fontSize:11,color:"rgba(255,217,102,0.6)",marginBottom:18}}>{qteIdx+1} / {qteSequence.length} — Arrow keys on Keyboard</p>
-            <div style={{display:"flex",gap:8,justifyContent:"center",marginBottom:22}}>{qteSequence.map((d,i)=>(<span key={i} style={{width:42,height:42,display:"flex",alignItems:"center",justifyContent:"center",borderRadius:8,border:`2px solid ${i<qteIdx?"#3ec995":i===qteIdx?"#ffd966":"rgba(255,217,102,0.25)"}`,color:i<qteIdx?"#3ec995":i===qteIdx?"#ffd966":"rgba(255,217,102,0.3)",fontSize:20,fontWeight:800,background:i===qteIdx?"rgba(255,217,102,0.12)":"transparent"}}>{d}</span>))}</div>
+          {qteActive&&<div data-testid="lumen-qte" style={{width:"100%",maxWidth:480,padding:"26px 22px",borderRadius:18,background:"linear-gradient(180deg, rgba(255,217,102,0.18), rgba(232,92,58,0.1))",border:"2px solid #ffd966",animation:"qtePulse 0.8s ease infinite",textAlign:"center",boxShadow:"0 0 30px rgba(255,217,102,0.4), inset 0 0 25px rgba(255,217,102,0.1)"}}>
+            <p style={{fontWeight:900,fontSize:18,color:"#ffd966",marginBottom:6,letterSpacing:"0.1em"}}>⚡ EVADE ⚡</p> <div style={{width: "80%", margin: "0 auto 15px"}}><Bar val={lumenQteTime} max={100} color={lumenQteTime > 40 ? "#ffd966" : "#e85c3a"} h={8} /></div>
+            <p style={{fontSize:12,color:"rgba(255,217,102,0.75)",marginBottom:20,letterSpacing:"0.04em"}}>{qteIdx+1} / {qteSequence.length} — Use Arrow Keys or Click below</p>
+            <div style={{display:"flex",gap:10,justifyContent:"center",marginBottom:18}}>{qteSequence.map((d,i)=>(<span key={i} style={{width:48,height:48,display:"flex",alignItems:"center",justifyContent:"center",borderRadius:10,border:`2px solid ${i<qteIdx?"#3ec995":i===qteIdx?"#ffd966":"rgba(255,217,102,0.25)"}`,color:i<qteIdx?"#3ec995":i===qteIdx?"#ffd966":"rgba(255,217,102,0.35)",fontSize:24,fontWeight:900,background:i===qteIdx?"rgba(255,217,102,0.18)":i<qteIdx?"rgba(62,201,149,0.12)":"transparent",boxShadow:i===qteIdx?"0 0 14px rgba(255,217,102,0.5)":"none",transition:"all 0.2s"}}>{d}</span>))}</div>
+            {/* Touch / Click pad for arrow input */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3, 56px)",gridTemplateRows:"repeat(3, 56px)",gap:6,justifyContent:"center",margin:"0 auto",width:"fit-content"}}>
+              <div /><button data-testid="qte-arrow-up" onClick={()=>qteInput("↑")} style={{borderRadius:10,border:"1.5px solid rgba(255,217,102,0.5)",background:"rgba(255,217,102,0.08)",color:"#ffd966",fontSize:24,fontWeight:900,cursor:"pointer",transition:"all 0.15s"}} onMouseDown={(e)=>{e.currentTarget.style.background="rgba(255,217,102,0.25)";}} onMouseUp={(e)=>{e.currentTarget.style.background="rgba(255,217,102,0.08)";}}>↑</button><div />
+              <button data-testid="qte-arrow-left" onClick={()=>qteInput("←")} style={{borderRadius:10,border:"1.5px solid rgba(255,217,102,0.5)",background:"rgba(255,217,102,0.08)",color:"#ffd966",fontSize:24,fontWeight:900,cursor:"pointer",transition:"all 0.15s"}} onMouseDown={(e)=>{e.currentTarget.style.background="rgba(255,217,102,0.25)";}} onMouseUp={(e)=>{e.currentTarget.style.background="rgba(255,217,102,0.08)";}}>←</button><div /><button data-testid="qte-arrow-right" onClick={()=>qteInput("→")} style={{borderRadius:10,border:"1.5px solid rgba(255,217,102,0.5)",background:"rgba(255,217,102,0.08)",color:"#ffd966",fontSize:24,fontWeight:900,cursor:"pointer",transition:"all 0.15s"}} onMouseDown={(e)=>{e.currentTarget.style.background="rgba(255,217,102,0.25)";}} onMouseUp={(e)=>{e.currentTarget.style.background="rgba(255,217,102,0.08)";}}>→</button>
+              <div /><button data-testid="qte-arrow-down" onClick={()=>qteInput("↓")} style={{borderRadius:10,border:"1.5px solid rgba(255,217,102,0.5)",background:"rgba(255,217,102,0.08)",color:"#ffd966",fontSize:24,fontWeight:900,cursor:"pointer",transition:"all 0.15s"}} onMouseDown={(e)=>{e.currentTarget.style.background="rgba(255,217,102,0.25)";}} onMouseUp={(e)=>{e.currentTarget.style.background="rgba(255,217,102,0.08)";}}>↓</button><div />
+            </div>
           </div>}
           {!qteActive&&lumenariPhase===3&&<div style={{width:"100%",maxWidth:420}}><p style={{fontSize:11,color:"rgba(200,160,100,0.6)",marginBottom:10,textAlign:"center",letterSpacing:"0.06em",fontWeight:600}}>STONE GOLEMS</p><div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>{golems.map((g,i)=>(<div key={g.id} onClick={g.hp>0?()=>attackGolem(i):undefined} style={{opacity:g.hp<=0?0.3:1,cursor:g.hp>0?"pointer":"default",padding:"12px",borderRadius:10,border:"1px solid rgba(160,120,80,0.4)",background:"rgba(80,60,40,0.25)",textAlign:"center"}}><p style={{fontSize:11,fontWeight:600,color:"#c8a070",marginBottom:6}}>Golem {i+1}</p><Bar val={Math.max(0,g.hp)} max={g.maxHp} color="#a8744c" h={5}/></div>))}</div></div>}
           {!qteActive&&!combatResult&&<div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(ACT.length,3)},1fr)`,gap:10,width:"100%",maxWidth:480}}>
@@ -1879,6 +2029,13 @@ if (race?.id === "elf") {
                 </button>
               </div>
 
+              {/* NEW: RETURN TO MENU BUTTON */}
+              <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+                <button onClick={() => { if(window.SFX) window.SFX.menuBack(); setShowSettings(false); setScreen("main_menu"); }} style={{ flex: 1, padding: "10px", background: "rgba(232,92,58,0.15)", border: "1px solid #e85c3a", color: "#e85c3a", borderRadius: 8, cursor: "pointer", fontWeight: "bold", transition: "all 0.2s" }} onMouseOver={e => e.currentTarget.style.background = "rgba(232,92,58,0.3)"} onMouseOut={e => e.currentTarget.style.background = "rgba(232,92,58,0.15)"}>
+                  Return to Main Menu
+                </button>
+              </div>
+
             </div>
           </div>
         </div>
@@ -1888,4 +2045,4 @@ if (race?.id === "elf") {
       {renderGameScreen()}
     </>
   );
-} // <-- THIS CLOSES App()
+}

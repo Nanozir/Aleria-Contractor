@@ -41,7 +41,7 @@ export function Panel({ children, style, onClick }) {
   );
 }
 
-export function Btn({ children, onClick, variant = "primary", small, full, disabled }) {
+export function Btn({ children, onClick, variant = "primary", small, full, disabled, "data-testid": testId, style: extraStyle }) {
   let bg = "linear-gradient(180deg, #4b3d8f, #2a205a)"; let col = "#fff"; let brd = "rgba(123, 111, 228, 0.5)"; let glow = "rgba(123,111,228,0.4)";
   if (variant === "gold" || variant === "amber") { bg = "linear-gradient(180deg, #d49830, #8a5a19)"; brd = "rgba(255, 230, 150, 0.8)"; glow = "rgba(224,165,35,0.5)"; col = "#fff"; }
   if (variant === "danger") { bg = "linear-gradient(180deg, #b83a2a, #6e1c12)"; brd = "rgba(232, 92, 58, 0.8)"; glow = "rgba(232,92,58,0.5)"; }
@@ -50,6 +50,7 @@ export function Btn({ children, onClick, variant = "primary", small, full, disab
 
   return (
     <button
+      data-testid={testId}
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
       style={{
@@ -58,7 +59,8 @@ export function Btn({ children, onClick, variant = "primary", small, full, disab
         width: full ? "100%" : "auto", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1,
         boxShadow: `0 0 15px ${glow}, inset 0 0 8px rgba(255,255,255,0.1)`,
         textShadow: "0 1px 3px rgba(0,0,0,0.8)", letterSpacing: "0.05em",
-        transition: "all 0.2s"
+        transition: "all 0.2s",
+        ...(extraStyle || {})
       }}
       onMouseOver={(e) => { if(!disabled) e.currentTarget.style.transform = "scale(1.04)"; }}
       onMouseOut={(e) => { if(!disabled) e.currentTarget.style.transform = "scale(1)"; }}
@@ -71,7 +73,23 @@ export function Btn({ children, onClick, variant = "primary", small, full, disab
 export function CoinBar({bronze}){return <div style={{background:"linear-gradient(90deg,rgba(255,180,40,0.16),rgba(255,180,40,0.06))",border:"1px solid rgba(255,200,80,0.3)",borderRadius:99,padding:"7px 18px",display:"inline-flex",alignItems:"center",gap:10,boxShadow:"0 2px 12px rgba(232,185,56,0.15),inset 0 1px 0 rgba(255,255,255,0.05)"}}><span style={{fontSize:10,color:"rgba(255,200,80,0.65)",fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase"}}>Wallet</span><span style={{fontSize:13,color:"#ffd166",fontWeight:700}}>{fmt(bronze)}</span></div>;}
 
 export function StarRating({stars, max=5}){
-  return <div style={{display:"inline-flex",alignItems:"center",gap:4}}>{Array.from({length:max}).map((_,i)=>(<span key={i} className={i<stars?"star-filled":"star-empty"}>★</span>))}</div>;
+  // Redesigned: bold rounded badge with star icons
+  const color = stars >= 5 ? "#e85c3a" : stars >= 4 ? "#ff8c00" : stars >= 3 ? "#ffd966" : stars >= 2 ? "#a89df0" : "#3ec995";
+  return (
+    <span data-testid="star-rating" style={{
+      display: "inline-flex", alignItems: "center", gap: 3,
+      background: `linear-gradient(180deg, ${color}26, ${color}10)`,
+      border: `1.5px solid ${color}`,
+      borderRadius: 99, padding: "3px 9px",
+      fontSize: 11, fontWeight: 900, color: color,
+      letterSpacing: "0.04em", lineHeight: 1,
+      boxShadow: `0 0 10px ${color}40, inset 0 0 6px ${color}22`,
+      textShadow: `0 0 6px ${color}99`
+    }}>
+      <span style={{ fontSize: 13, lineHeight: 1 }}>★</span>
+      <span>{stars}</span>
+    </span>
+  );
 }
 
 export function Ton618BG() {

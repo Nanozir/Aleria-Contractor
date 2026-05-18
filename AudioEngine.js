@@ -79,16 +79,108 @@ export const SFX = {
     // Vinande is-storm blandat med obehagliga "sprick"-ljud när du fryser ihjäl
     frozen: () => { nz(3.0, 0.35, 800); tn(900, "sine", 0.1, 0.15, 0.2); tn(1300, "sine", 0.1, 0.1, 0.8); tn(1800, "sine", 0.1, 0.1, 1.5); }, 
     // Brutalt slag/splatter när du dödas av monster eller explosioner
-    shatter: () => { nz(0.6, 0.6, 2000); tn(100, "square", 0.5, 0.5); tn(40, "sawtooth", 0.6, 0.5); } 
+    shatter: () => { nz(0.6, 0.6, 2000); tn(100, "square", 0.5, 0.5); tn(40, "sawtooth", 0.6, 0.5); },
+
+    // --- NYA LJUD FÖR MINIGAMES & CRAFTING ---
+    craftGear: () => tn(800, "sine", 0.1, 0.1),
+    craftMeal: () => tn(400, "sine", 0.1, 0.1),
+    reflexHit: () => tn(1200, "sine", 0.05, 0.15),
+    liftTick: () => nz(0.05, 0.1, 400),
+    anvilHit: () => { tn(1000, "square", 0.1, 0.2); nz(0.1, 0.1, 2000); },
+    anvilMiss: () => tn(150, "sawtooth", 0.3, 0.2),
+    eat: () => tn(300, "sine", 0.1, 0.1),
+    encounter: () => tn(150, "sawtooth", 0.5, 0.3)
 };
 
 // Global SFX for standard functions
 if (typeof window !== "undefined") window.SFX = SFX;
 
 // Boss & Environmental triggers
-export function stopBoss() {}
+// FIX: Procedural Lumenari boss music with escalating orchestral phases
+let bossLoop = null;
+let bossPhase = 0;
+let bossInterval = null;
+
+export function stopBoss() {
+  if (bossInterval) { clearInterval(bossInterval); bossInterval = null; }
+  if (bossLoop) {
+    try {
+      bossLoop.oscillators?.forEach(o => { try { o.stop(); } catch(e){} });
+      bossLoop.gainNodes?.forEach(g => { try { g.disconnect(); } catch(e){} });
+    } catch(e){}
+    bossLoop = null;
+  }
+}
+
+export function startBossMusic(phase = 1) {
+  stopBoss();
+  bossPhase = phase;
+  const c = aC(); if (!c) return;
+  
+  const oscillators = [];
+  const gainNodes = [];
+  
+  // Phase 1: Low dark drone + slow ominous bass
+  // Phase 2: Add cello-like middle voice + slow brass swells
+  // Phase 3: Full orchestral - timpani hits, brass stabs, dissonant strings
+  const baseVol = 0.06 + (phase - 1) * 0.025;
+  
+  // Sustained bass drone (root note)
+  const drone = c.createOscillator(); drone.type = "sawtooth"; drone.frequency.value = 55;
+  const droneFilter = c.createBiquadFilter(); droneFilter.type = "lowpass"; droneFilter.frequency.value = 250 + phase * 80;
+  const droneGain = c.createGain(); droneGain.gain.value = baseVol * VOLUMES.master * VOLUMES.bgm;
+  drone.connect(droneFilter); droneFilter.connect(droneGain); droneGain.connect(c.destination);
+  drone.start(); oscillators.push(drone); gainNodes.push(droneGain);
+  
+  // 5th harmony (sub-bass)
+  const sub = c.createOscillator(); sub.type = "triangle"; sub.frequency.value = 82.41; // E
+  const subGain = c.createGain(); subGain.gain.value = baseVol * 0.7 * VOLUMES.master * VOLUMES.bgm;
+  sub.connect(subGain); subGain.connect(c.destination);
+  sub.start(); oscillators.push(sub); gainNodes.push(subGain);
+  
+  if (phase >= 2) {
+    // Mid voice: cello-like sawtooth
+    const cello = c.createOscillator(); cello.type = "sawtooth"; cello.frequency.value = 110; // A
+    const celloF = c.createBiquadFilter(); celloF.type = "lowpass"; celloF.frequency.value = 800;
+    const celloG = c.createGain(); celloG.gain.value = baseVol * 0.5 * VOLUMES.master * VOLUMES.bgm;
+    cello.connect(celloF); celloF.connect(celloG); celloG.connect(c.destination);
+    cello.start(); oscillators.push(cello); gainNodes.push(celloG);
+    
+    // LFO for swells
+    const lfo = c.createOscillator(); lfo.frequency.value = 0.4;
+    const lfoGain = c.createGain(); lfoGain.gain.value = baseVol * 0.3 * VOLUMES.master * VOLUMES.bgm;
+    lfo.connect(lfoGain); lfoGain.connect(celloG.gain);
+    lfo.start(); oscillators.push(lfo);
+  }
+  
+  if (phase >= 3) {
+    // Dissonant high string
+    const diss = c.createOscillator(); diss.type = "sawtooth"; diss.frequency.value = 233; // Bb
+    const dissF = c.createBiquadFilter(); dissF.type = "bandpass"; dissF.frequency.value = 1200;
+    const dissG = c.createGain(); dissG.gain.value = baseVol * 0.35 * VOLUMES.master * VOLUMES.bgm;
+    diss.connect(dissF); dissF.connect(dissG); dissG.connect(c.destination);
+    diss.start(); oscillators.push(diss); gainNodes.push(dissG);
+  }
+  
+  bossLoop = { oscillators, gainNodes };
+  
+  // Periodic timpani/brass hits
+  bossInterval = setInterval(() => {
+    // Brass stab
+    tn(110, "sawtooth", 0.4, 0.08 + phase * 0.02, 0);
+    tn(220, "sawtooth", 0.3, 0.05 + phase * 0.015, 0.05);
+    // Timpani
+    if (phase >= 2) nz(0.25, 0.12 + phase * 0.03, 200);
+    // Phase 3: dissonant brass
+    if (phase >= 3) { tn(174, "sawtooth", 0.5, 0.07, 0.2); tn(185, "sawtooth", 0.5, 0.06, 0.25); }
+  }, 2400 - phase * 300);
+}
+
 export function playWaves() { nz(2, 0.1, 100); }
-export function playLumen(phase) { tn(100 + (phase * 50), "sawtooth", 2, 0.2); }
+export function playLumen(phase) { 
+  startBossMusic(phase);
+  tn(100 + (phase * 50), "sawtooth", 2, 0.2); 
+}
 
 
 // ── 3. Nya Musiksystemet (BGM) ──

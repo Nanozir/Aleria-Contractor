@@ -16,7 +16,7 @@ export function ShopView({ bronze, setBronze, weapon, setWeapon, weapon2, setWea
     setArmor(a); SFX.click();
   }
   
-  const allWeapons = [...WEAPONS, ...craftedShop];
+  const allWeapons = [...WEAPONS, ...craftedShop.filter(c => c.atk !== undefined)];
   
   // NY LOGIK: Filtrera potions baserat på typ
   const hpPotions = POTIONS.filter(p => p.stat === "hp");
@@ -78,10 +78,10 @@ export function ShopView({ bronze, setBronze, weapon, setWeapon, weapon2, setWea
     
     <p style={{ fontSize: 13, color: "rgba(200,192,248,0.55)", marginBottom: 8, fontWeight: 600, marginTop: 20 }}>Armor</p>
     <div style={{ display: "flex", flexDirection: "column", gap: 7, marginBottom: 16 }}>
-      {ARMORS.map(a => {
-        const owned = ownedArmors.includes(a.id); const adj = a.price === 0 ? 0 : adjustedPrice(a.price); const aff = bronze >= adj; const eq = armor.id === a.id; return <Panel key={a.id} style={{ display: "flex", alignItems: "center", gap: 12, opacity: owned || aff ? 1 : 0.45 }}>
-          <div style={{ flex: 1 }}><div style={{ display: "flex", gap: 8, alignItems: "baseline", marginBottom: 2 }}><span style={{ fontWeight: 600, fontSize: 13, color: "#d4cbf8" }}>{a.name}</span><span style={{ fontSize: 11, color: "rgba(200,192,248,0.45)" }}>+{a.def} DEF</span></div></div>
-          {eq ? <Tag color="#3ec995">Equipped</Tag> : owned ? <Btn small variant="primary" onClick={() => buyOrEquipArmor(a)}>Equip</Btn> : <Btn small variant="amber" disabled={!aff} onClick={() => buyOrEquipArmor(a)}>{a.price === 0 ? "Equip" : `${adj} B`}</Btn>}
+      {[...ARMORS, ...craftedShop.filter(c => c.def !== undefined)].map(a => {
+        const owned = ownedArmors.includes(a.id); const adj = a.price === 0 ? 0 : adjustedPrice(a.price); const aff = bronze >= adj; const eq = armor.id === a.id; return <Panel key={a.id} style={{ display: "flex", alignItems: "center", gap: 12, opacity: owned || aff ? 1 : 0.45, boxShadow: a.isCrafted ? "0 0 10px rgba(255,217,102,0.2)" : "none", borderColor: a.isCrafted ? "#ffd966" : "rgba(255,255,255,0.1)" }}>
+          <div style={{ flex: 1 }}><div style={{ display: "flex", gap: 8, alignItems: "baseline", marginBottom: 2 }}><span style={{ fontWeight: 600, fontSize: 13, color: a.isCrafted ? "#ffd966" : "#d4cbf8" }}>{a.name}</span><span style={{ fontSize: 11, color: "rgba(200,192,248,0.45)" }}>+{a.def} DEF</span></div></div>
+          {eq ? <Tag color="#3ec995">Equipped</Tag> : owned ? <Btn small variant="primary" onClick={() => buyOrEquipArmor(a)}>Equip</Btn> : <Btn small variant={a.isCrafted ? "gold" : "amber"} disabled={!aff} onClick={() => buyOrEquipArmor(a)}>{a.price === 0 ? "Equip" : `${adj} B`}</Btn>}
         </Panel>;
       })}
     </div>
@@ -191,30 +191,56 @@ export function SleepView({ housing, chooseHousing, bronze, ownsHouse, buyHouse 
 }
 
 export function CityView({ bronze, setBronze, cityLevel, setCityLevel, setStats, notify }) {
+  // Defaults for new fields (preserve existing saves)
+  const armory = cityLevel.armory || 0;
+  const sanctum = cityLevel.sanctum || 0;
+  const market = cityLevel.market || 0;
+  const forge = cityLevel.forge || 0;
+  
+  const upgrades = [
+    { key: "pump", name: "Mana Pump", color: "#a89df0", desc: "+5 Max MP per level", lvl: cityLevel.pump, cost: 500 + cityLevel.pump * 250, stat: "maxMp", val: 5, sound: "buy" },
+    { key: "walls", name: "Obsidian Walls", color: "#e85c3a", desc: "+5 Max HP per level", lvl: cityLevel.walls, cost: 500 + cityLevel.walls * 250, stat: "maxHp", val: 5, sound: "buy" },
+    { key: "armory", name: "Inner Armory", color: "#ffd966", desc: "+3 Max Stamina, +1 ATK per level", lvl: armory, cost: 700 + armory * 350, stat: "maxStamina", val: 3, sound: "buy" },
+    { key: "sanctum", name: "Devil Sanctum", color: "#c44d4d", desc: "+8 Max MP per level (devil potency)", lvl: sanctum, cost: 900 + sanctum * 400, stat: "maxMp", val: 8, sound: "spell" },
+    { key: "market", name: "Black Market", color: "#3ec995", desc: "Generates 50 B passive each visit", lvl: market, cost: 600 + market * 300, stat: null, val: 0, sound: "buy" },
+    { key: "forge", name: "Hellforge", color: "#ff8c00", desc: "+2 Max HP & +2 Max Stamina per level", lvl: forge, cost: 800 + forge * 400, stat: null, val: 0, sound: "buy" },
+  ];
+  
   return <div>
     <h2 style={{ fontSize: 18, fontWeight: 700, color: "#e8c878", marginBottom: 6 }}>Underworld City Builder</h2>
-    <p style={{ fontSize: 12, color: "rgba(232,200,120,0.65)", marginBottom: 20 }}>Rebuild the sector. Upgrades give permanent stat boosts.</p>
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <Panel style={{ borderColor: "rgba(168,157,240,0.3)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-          <p style={{ fontWeight: 700, fontSize: 14, color: "#a89df0" }}>Mana Pump (Lv {cityLevel.pump})</p>
-          <Btn small variant="primary" disabled={bronze < 500} onClick={() => { setBronze(b => b - 500); setCityLevel(c => ({ ...c, pump: c.pump + 1 })); setStats(s => ({ ...s, maxMp: s.maxMp + 5 })); notify("Pump upgraded! +5 Max MP", "#a89df0"); }}>Buy (500 B)</Btn>
-        </div>
-        <p style={{ fontSize: 11, color: "rgba(200,192,248,0.5)" }}>Increases Max MP by 5 per level.</p>
-      </Panel>
-      <Panel style={{ borderColor: "rgba(232,92,58,0.3)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-          <p style={{ fontWeight: 700, fontSize: 14, color: "#e85c3a" }}>Obsidian Walls (Lv {cityLevel.walls})</p>
-          <Btn small variant="danger" disabled={bronze < 500} onClick={() => { setBronze(b => b - 500); setCityLevel(c => ({ ...c, walls: c.walls + 1 })); setStats(s => ({ ...s, maxHp: s.maxHp + 5 })); notify("Walls upgraded! +5 Max HP", "#e85c3a"); }}>Buy (500 B)</Btn>
-        </div>
-        <p style={{ fontSize: 11, color: "rgba(255,200,180,0.5)" }}>Increases Max HP by 5 per level.</p>
-      </Panel>
+    <p style={{ fontSize: 12, color: "rgba(232,200,120,0.65)", marginBottom: 20 }}>Rebuild the sector. Upgrades give permanent stat boosts. Costs scale with each level.</p>
+    
+    {market > 0 && <Panel style={{ marginBottom: 14, borderColor: "rgba(62,201,149,0.4)", background: "rgba(62,201,149,0.06)" }}>
+      <Btn small variant="success" onClick={() => { setBronze(b => b + market * 50); notify(`Black Market trickle: +${market * 50} B`, "#3ec995"); if(window.SFX) window.SFX.buy(); }}>Collect Market Profits (+{market * 50} B)</Btn>
+    </Panel>}
+    
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      {upgrades.map(u => (
+        <Panel key={u.key} style={{ borderColor: `${u.color}40` }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <p style={{ fontWeight: 700, fontSize: 14, color: u.color }}>{u.name} <span style={{ fontSize: 11, opacity: 0.6 }}>Lv {u.lvl}</span></p>
+          </div>
+          <p style={{ fontSize: 11, color: "rgba(200,192,248,0.55)", marginBottom: 8, minHeight: 28 }}>{u.desc}</p>
+          <Btn small variant="primary" disabled={bronze < u.cost} onClick={() => {
+            setBronze(b => b - u.cost);
+            setCityLevel(c => ({ ...c, [u.key]: (c[u.key] || 0) + 1 }));
+            if (u.stat && u.val) setStats(s => ({ ...s, [u.stat]: s[u.stat] + u.val }));
+            if (u.key === "forge") setStats(s => ({ ...s, maxHp: s.maxHp + 2, maxStamina: s.maxStamina + 2 }));
+            if (u.key === "armory") setStats(s => ({ ...s, maxStamina: s.maxStamina + 3 }));
+            notify(`${u.name} upgraded!`, u.color);
+            if (window.SFX && window.SFX[u.sound]) window.SFX[u.sound]();
+          }}>Upgrade ({u.cost} B)</Btn>
+        </Panel>
+      ))}
     </div>
   </div>;
 }
 
-export function CraftView({ bronze, setBronze, craftMats, setCraftMats, setOwnedWeapons, setPotions, notify, setCraftedShop }) {
+export function CraftView({ bronze, setBronze, craftMats, setCraftMats, setOwnedWeapons, setOwnedArmors, setPotions, notify, setCraftedShop }) {
+  const [category, setCategory] = useState("weapons"); // weapons, armor, potions
   const [mini, setMini] = useState(null);
+  const [bundleCount, setBundleCount] = useState(1);
+  const [ingredient, setIngredient] = useState("steel"); // steel, mythril, dragon
   
   // Smith Minigame
   const [pos, setPos] = useState(0);
@@ -222,13 +248,27 @@ export function CraftView({ bronze, setBronze, craftMats, setCraftMats, setOwned
   const [dir, setDir] = useState(1);
   const [hits, setHits] = useState(0);
   const [smithScore, setSmithScore] = useState(0);
+  const [smithGoal, setSmithGoal] = useState(8);
+  const [smithType, setSmithType] = useState("weapon"); // weapon or armor
 
   // Potion Minigame
   const [potionDiff, setPotionDiff] = useState(null);
   const [potionTarget, setPotionTarget] = useState("");
   const [potionMix, setPotionMix] = useState([]);
   
-  // Recept och färger för de olika svårighetsgraderna
+  // Vial-catching minigame
+  const [vialPos, setVialPos] = useState(50);
+  const [catcherPos, setCatcherPos] = useState(50);
+  const [vialsCaught, setVialsCaught] = useState(0);
+  const [vialsMissed, setVialsMissed] = useState(0);
+  const [vialActive, setVialActive] = useState(false);
+  
+  const INGREDIENTS = {
+    steel: { name: "Steel Ingot", cost: 2, qualityBonus: 0, color: "#9aa5b8", desc: "Standard alloy. Reliable forge." },
+    mythril: { name: "Mythril Shard", cost: 4, qualityBonus: 2, color: "#87cefa", desc: "Lighter, sharper. +Quality." },
+    dragon: { name: "Dragon Bone", cost: 6, qualityBonus: 4, color: "#e85c3a", desc: "Legendary core. +Big Quality." }
+  };
+
   const P_RECIPES = {
     easy: { "Purple": ["Red", "Blue"], "Green": ["Yellow", "Blue"], "Orange": ["Red", "Yellow"] },
     normal: { "Teal": ["Blue", "White"], "Pink": ["Red", "White"], "Brown": ["Red", "Yellow", "Blue"] },
@@ -253,6 +293,72 @@ export function CraftView({ bronze, setBronze, craftMats, setCraftMats, setOwned
     return () => clearInterval(t);
   }, [mini, dir]);
 
+  // Vial catcher minigame loop
+  useEffect(() => {
+    if (mini !== "vial") return;
+    let interval;
+    const spawnVial = () => {
+      setVialPos(Math.random() * 80 + 10);
+      setVialActive(true);
+    };
+    spawnVial();
+    interval = setInterval(() => {
+      setVialPos(p => {
+        // Vial falls (using top % which increases)
+        const newY = (p + 8);
+        if (newY > 90) {
+          // Check catch
+          const catcher = catcherPos;
+          if (Math.abs((catcher) - (vialPos)) < 15) {
+            setVialsCaught(v => v + 1);
+            if (window.SFX) window.SFX.click();
+          } else {
+            setVialsMissed(v => v + 1);
+            if (window.SFX) window.SFX.attack();
+          }
+          // Reset for new vial
+          setTimeout(spawnVial, 200);
+          return -10;
+        }
+        return newY;
+      });
+    }, 100);
+    return () => clearInterval(interval);
+  }, [mini, catcherPos]);
+  
+  useEffect(() => {
+    if (mini !== "vial") return;
+    if (vialsCaught + vialsMissed >= 8) {
+      const accuracy = vialsCaught / (vialsCaught + vialsMissed);
+      const potionTypes = ["hp", "mp", "stamina"];
+      const chosenType = potionTypes[Math.floor(Math.random() * potionTypes.length)];
+      const bundles = bundleCount;
+      let pots = [];
+      if (accuracy >= 0.9) {
+        // Mastercraft
+        const masterPot = chosenType === "hp" ? { id: "master_hp_"+Date.now(), name: "Masterwork Health", stat: "hp", val: 150, price: 120 } :
+                          chosenType === "mp" ? { id: "master_mp_"+Date.now(), name: "Masterwork Mana", stat: "mp", val: 120, price: 130 } :
+                          { id: "master_sta_"+Date.now(), name: "Masterwork Stamina", stat: "stamina", val: 130, price: 110 };
+        pots = Array.from({length: bundles}, () => ({...masterPot}));
+        notify(`Mastercraft! Brewed ${bundles} ${masterPot.name}`, "#ffd966");
+      } else if (accuracy >= 0.6) {
+        const goodPot = chosenType === "hp" ? { id: "hp_high_"+Date.now(), name: "Health (High)", stat: "hp", val: 100, price: 130 } :
+                       chosenType === "mp" ? { id: "mp_high_"+Date.now(), name: "Mana (High)", stat: "mp", val: 90, price: 120 } :
+                       { id: "sta_high_"+Date.now(), name: "Stamina (High)", stat: "stamina", val: 100, price: 110 };
+        pots = Array.from({length: bundles}, () => ({...goodPot}));
+        notify(`Brewed ${bundles} ${goodPot.name}`, "#3ec995");
+      } else {
+        const weakPot = chosenType === "hp" ? { id: "hp_med_"+Date.now(), name: "Health (Mid)", stat: "hp", val: 50, price: 60 } :
+                       chosenType === "mp" ? { id: "mp_med_"+Date.now(), name: "Mana (Mid)", stat: "mp", val: 40, price: 75 } :
+                       { id: "sta_med_"+Date.now(), name: "Stamina (Mid)", stat: "stamina", val: 50, price: 55 };
+        pots = Array.from({length: bundles}, () => ({...weakPot}));
+        notify(`Brewed ${bundles} ${weakPot.name} — middling quality`, "#a89df0");
+      }
+      pots.forEach(p => setPotions(prev => [...prev, p]));
+      setMini(null); setVialsCaught(0); setVialsMissed(0);
+    }
+  }, [vialsCaught, vialsMissed, mini, bundleCount, notify, setPotions]);
+
   const startPotion = (diff) => {
     setPotionDiff(diff);
     const colors = Object.keys(P_RECIPES[diff]);
@@ -273,203 +379,529 @@ export function CraftView({ bronze, setBronze, craftMats, setCraftMats, setOwned
       const correct = reqColors.every(req => newMix.includes(req));
       setTimeout(() => {
         if (correct) {
-          // NY LOGIK: Välj slumpmässig typ av dryck (HP, MP eller Stamina)
           const potionTypes = ["hp", "mp", "stamina"];
           const chosenType = potionTypes[Math.floor(Math.random() * potionTypes.length)];
           
           let midPot, highPot, masterPot;
           
           if (chosenType === "hp") {
-            midPot = { id: "hp_med", name: "Health (Mid)", stat: "hp", val: 70, price: 60 };
-            highPot = { id: "hp_high", name: "Health (High)", stat: "hp", val: 150, price: 130 };
-            masterPot = { id: "master_hp", name: "Masterwork Health", stat: "hp", val: 110, price: 80 }; 
+            midPot = { id: "hp_med_"+Date.now(), name: "Health (Mid)", stat: "hp", val: 70, price: 60 };
+            highPot = { id: "hp_high_"+Date.now(), name: "Health (High)", stat: "hp", val: 150, price: 130 };
+            masterPot = { id: "master_hp_"+Date.now(), name: "Masterwork Health", stat: "hp", val: 200, price: 180 }; 
           } else if (chosenType === "mp") {
-            midPot = { id: "mp_med", name: "Mana (Mid)", stat: "mp", val: 50, price: 75 };
-            highPot = { id: "mp_high", name: "Mana (High)", stat: "mp", val: 120, price: 120 };
-            masterPot = { id: "master_mp", name: "Masterwork Mana", stat: "mp", val: 80, price: 90 };
+            midPot = { id: "mp_med_"+Date.now(), name: "Mana (Mid)", stat: "mp", val: 50, price: 75 };
+            highPot = { id: "mp_high_"+Date.now(), name: "Mana (High)", stat: "mp", val: 120, price: 120 };
+            masterPot = { id: "master_mp_"+Date.now(), name: "Masterwork Mana", stat: "mp", val: 160, price: 170 };
           } else {
-            midPot = { id: "sta_med", name: "Stamina (Mid)", stat: "stamina", val: 60, price: 55 };
-            highPot = { id: "sta_high", name: "Stamina (High)", stat: "stamina", val: 120, price: 110 };
-            masterPot = { id: "master_sta", name: "Masterwork Stamina", stat: "stamina", val: 90, price: 65 };
+            midPot = { id: "sta_med_"+Date.now(), name: "Stamina (Mid)", stat: "stamina", val: 60, price: 55 };
+            highPot = { id: "sta_high_"+Date.now(), name: "Stamina (High)", stat: "stamina", val: 120, price: 110 };
+            masterPot = { id: "master_sta_"+Date.now(), name: "Masterwork Stamina", stat: "stamina", val: 170, price: 140 };
           }
 
-          if (potionDiff === "easy") {
-             setPotions(p => [...p, midPot]);
-             notify(`Perfect brew! Created ${midPot.name}`, "#3ec995");
-          } else {
-             const masterwork = Math.random() > (potionDiff === "hard" ? 0.3 : 0.6);
-             if (masterwork) {
-                setPotions(p => [...p, masterPot]);
-                notify(`Legendary! ${masterPot.name} Brewed!`, "#ffd966");
-             } else {
-                setPotions(p => [...p, highPot]);
-                notify(`Perfect brew! Created ${highPot.name}`, "#3ec995");
-             }
+          const bundles = bundleCount;
+          let chosen = midPot;
+          if (potionDiff === "easy") chosen = midPot;
+          else {
+            const masterworkChance = potionDiff === "hard" ? 0.4 : 0.2;
+            const masterwork = Math.random() < masterworkChance;
+            chosen = masterwork ? masterPot : highPot;
           }
+          const pots = Array.from({length: bundles}, () => ({...chosen, id: chosen.id + "_" + Math.random()}));
+          pots.forEach(p => setPotions(prev => [...prev, p]));
+          notify(`Brewed ${bundles}× ${chosen.name}!`, chosen === masterPot ? "#ffd966" : "#3ec995");
         } else {
-          notify("The vial exploded. Failed brew.", "#d84838");
+          notify("Vials exploded. Failed brew.", "#d84838");
         }
         setMini(null);
         setPotionDiff(null);
       }, 500);
     }
   };
+  
+  const startSmith = (type) => {
+    const ing = INGREDIENTS[ingredient];
+    const totalMetal = ing.cost * bundleCount;
+    if (craftMats.metal < totalMetal) { notify(`Need ${totalMetal} Metal (${ing.name})`, "#d84838"); return; }
+    setCraftMats(m => ({ ...m, metal: m.metal - totalMetal }));
+    setSmithType(type); setMini("smith"); setHits(0); setSmithScore(0); 
+    setPos(0); posRef.current = 0; setSmithGoal(6 + bundleCount * 2);
+  };
 
   return <div>
     <h2 style={{ fontSize: 18, fontWeight: 700, color: "#ffd966", marginBottom: 6 }}>Workshop</h2>
-    <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
-      <Tag color="#a8740c">Metal: {craftMats.metal}</Tag><Tag color="#3ec995">Herb: {craftMats.herb}</Tag>
+    <div style={{ display: "flex", gap: 10, marginBottom: 16, alignItems: "center" }}>
+      <Tag color="#a8740c">Metal: {craftMats.metal}</Tag>
+      <Tag color="#3ec995">Herb: {craftMats.herb}</Tag>
+      <Btn small data-testid="buy-metal" onClick={() => { if (bronze >= 35) { setBronze(b => b - 35); setCraftMats(m => ({ ...m, metal: m.metal + 1 })); if(window.SFX) window.SFX.buy(); } else notify("Need 35 B", "#d84838"); }}>Buy Metal (35 B)</Btn>
+      <Btn small data-testid="buy-herb" onClick={() => { if (bronze >= 15) { setBronze(b => b - 15); setCraftMats(m => ({ ...m, herb: m.herb + 1 })); if(window.SFX) window.SFX.buy(); } else notify("Need 15 B", "#d84838"); }}>Buy Herb (15 B)</Btn>
     </div>
 
-    {!mini ? <>
-      <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
-        <Btn small onClick={() => { if (bronze >= 35) { setBronze(b => b - 35); setCraftMats(m => ({ ...m, metal: m.metal + 1 })); if(window.SFX) window.SFX.buy(); } else notify("Need 35 B", "#d84838"); }}>Buy Metal (35 B)</Btn>
-        <Btn small onClick={() => { if (bronze >= 15) { setBronze(b => b - 15); setCraftMats(m => ({ ...m, herb: m.herb + 1 })); if(window.SFX) window.SFX.buy(); } else notify("Need 15 B", "#d84838"); }}>Buy Herb (15 B)</Btn>
+    {!mini && <>
+      {/* CATEGORY TABS */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
+        {[{id:"weapons",label:"Weapons",c:"#e85c3a"},{id:"armor",label:"Armor",c:"#87cefa"},{id:"potions",label:"Potions",c:"#3ec995"}].map(t => (
+          <button key={t.id} data-testid={`craft-tab-${t.id}`} onClick={() => setCategory(t.id)} style={{ padding: "8px 16px", borderRadius: 99, border: category === t.id ? `2px solid ${t.c}` : "1px solid rgba(255,255,255,0.15)", background: category === t.id ? `${t.c}22` : "transparent", color: category === t.id ? t.c : "rgba(255,255,255,0.55)", fontWeight: 700, fontSize: 13, letterSpacing: "0.04em", cursor: "pointer" }}>{t.label}</button>
+        ))}
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 12 }}>
-        <Panel onClick={() => { if (craftMats.metal >= 2) { setCraftMats(m => ({ ...m, metal: m.metal - 2 })); setMini("smith"); setHits(0); setSmithScore(0); setPos(0); posRef.current = 0; } else notify("Need 2 Metal", "#d84838"); }}>
-          <b style={{ color: "#e0a523" }}>Smith Weapon (2 Metal)</b>
-        </Panel>
-        
-        <Panel style={{ borderColor: "rgba(62,201,149,0.4)" }}>
-          <b style={{ color: "#3ec995", display: "block", marginBottom: 10 }}>Brew Potion (2 Herb)</b>
+
+      {/* BUNDLE COUNT */}
+      <Panel style={{ marginBottom: 14, padding: 14, background: "rgba(168,157,240,0.05)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+          <span style={{ color: "rgba(200,192,248,0.7)", fontSize: 13, fontWeight: 600 }}>Craft Bundle Size:</span>
+          <div style={{ display: "flex", gap: 6 }}>
+            {[1, 3, 5].map(n => <Btn key={n} small variant={bundleCount === n ? "primary" : "ghost"} data-testid={`bundle-${n}`} onClick={() => setBundleCount(n)}>×{n}</Btn>)}
+          </div>
+        </div>
+      </Panel>
+
+      {/* CATEGORY CONTENT */}
+      {category === "weapons" && <>
+        <p style={{ fontSize: 12, color: "rgba(200,192,248,0.55)", marginBottom: 12 }}>Select an ingredient (better ingredients = better quality):</p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 14 }}>
+          {Object.entries(INGREDIENTS).map(([k, v]) => (
+            <Panel key={k} onClick={() => setIngredient(k)} style={{ cursor: "pointer", borderColor: ingredient === k ? v.color : "rgba(255,255,255,0.1)", background: ingredient === k ? `${v.color}15` : "rgba(0,0,0,0.2)", padding: 12 }}>
+              <p style={{ fontWeight: 700, fontSize: 13, color: v.color, marginBottom: 4 }}>{v.name}</p>
+              <p style={{ fontSize: 10, color: "rgba(200,192,248,0.55)", marginBottom: 6 }}>{v.desc}</p>
+              <p style={{ fontSize: 11, color: "#ffd966" }}>{v.cost} Metal each</p>
+            </Panel>
+          ))}
+        </div>
+        <Btn variant="gold" data-testid="forge-weapon-btn" full onClick={() => startSmith("weapon")}>Forge {bundleCount} Weapon{bundleCount > 1 ? "s" : ""} ({INGREDIENTS[ingredient].cost * bundleCount} Metal)</Btn>
+      </>}
+      
+      {category === "armor" && <>
+        <p style={{ fontSize: 12, color: "rgba(200,192,248,0.55)", marginBottom: 12 }}>Hammer-strike an anvil to forge new armor pieces:</p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 14 }}>
+          {Object.entries(INGREDIENTS).map(([k, v]) => (
+            <Panel key={k} onClick={() => setIngredient(k)} style={{ cursor: "pointer", borderColor: ingredient === k ? v.color : "rgba(255,255,255,0.1)", background: ingredient === k ? `${v.color}15` : "rgba(0,0,0,0.2)", padding: 12 }}>
+              <p style={{ fontWeight: 700, fontSize: 13, color: v.color, marginBottom: 4 }}>{v.name}</p>
+              <p style={{ fontSize: 11, color: "#ffd966" }}>{v.cost} Metal each</p>
+            </Panel>
+          ))}
+        </div>
+        <Btn variant="primary" data-testid="forge-armor-btn" full onClick={() => startSmith("armor")}>Forge {bundleCount} Armor Piece{bundleCount > 1 ? "s" : ""} ({INGREDIENTS[ingredient].cost * bundleCount} Metal)</Btn>
+      </>}
+      
+      {category === "potions" && <>
+        <p style={{ fontSize: 12, color: "rgba(200,192,248,0.55)", marginBottom: 12 }}>Choose a brewing method:</p>
+        <Panel style={{ borderColor: "rgba(62,201,149,0.4)", marginBottom: 12 }}>
+          <b style={{ color: "#3ec995", display: "block", marginBottom: 6 }}>Color-Mix Brew (2 Herb × {bundleCount})</b>
+          <p style={{ fontSize: 11, color: "rgba(200,192,248,0.5)", marginBottom: 10 }}>Mix colors to match the target — hard recipes can yield Mastercraft.</p>
           <div style={{ display: "flex", gap: 8 }}>
-            <Btn small variant="success" onClick={() => { if (craftMats.herb >= 2) { setCraftMats(m => ({ ...m, herb: m.herb - 2 })); startPotion("easy"); } else notify("Need 2 Herb", "#d84838"); }}>Easy</Btn>
-            <Btn small variant="amber" onClick={() => { if (craftMats.herb >= 2) { setCraftMats(m => ({ ...m, herb: m.herb - 2 })); startPotion("normal"); } else notify("Need 2 Herb", "#d84838"); }}>Normal</Btn>
-            <Btn small variant="danger" onClick={() => { if (craftMats.herb >= 2) { setCraftMats(m => ({ ...m, herb: m.herb - 2 })); startPotion("hard"); } else notify("Need 2 Herb", "#d84838"); }}>Hard</Btn>
+            <Btn small variant="success" data-testid="brew-easy" onClick={() => { const c = 2 * bundleCount; if (craftMats.herb >= c) { setCraftMats(m => ({ ...m, herb: m.herb - c })); startPotion("easy"); } else notify(`Need ${c} Herb`, "#d84838"); }}>Easy</Btn>
+            <Btn small variant="amber" data-testid="brew-normal" onClick={() => { const c = 2 * bundleCount; if (craftMats.herb >= c) { setCraftMats(m => ({ ...m, herb: m.herb - c })); startPotion("normal"); } else notify(`Need ${c} Herb`, "#d84838"); }}>Normal</Btn>
+            <Btn small variant="danger" data-testid="brew-hard" onClick={() => { const c = 2 * bundleCount; if (craftMats.herb >= c) { setCraftMats(m => ({ ...m, herb: m.herb - c })); startPotion("hard"); } else notify(`Need ${c} Herb`, "#d84838"); }}>Hard</Btn>
           </div>
         </Panel>
-      </div>
-    </> : mini === "smith" ? (
-      <Panel style={{ textAlign: "center", borderColor: "#e0a523" }}>
-        <b style={{ color: "#e0a523", fontSize: 16 }}>Forging...</b>
-        <p style={{ fontSize: 12, marginBottom: 20 }}>Strike the anvil! Yellow is Good (1 pt), Green is Perfect (2 pts).</p>
-        <div style={{ width: "100%", height: 30, background: "rgba(0,0,0,0.5)", position: "relative", marginBottom: 20, borderRadius: 4 }}>
-          <div style={{ position: "absolute", left: "30%", width: "40%", height: "100%", background: "rgba(232,185,56,0.5)" }} />
-          <div style={{ position: "absolute", left: "45%", width: "10%", height: "100%", background: "rgba(62,201,149,0.8)" }} />
-          <div style={{ position: "absolute", left: `${pos}%`, width: 4, height: "100%", background: "#fff", transform: "translateX(-50%)" }} />
+        
+        <Panel style={{ borderColor: "rgba(255,140,0,0.4)" }}>
+          <b style={{ color: "#ff8c00", display: "block", marginBottom: 6 }}>Vial-Catch Minigame (3 Herb × {bundleCount})</b>
+          <p style={{ fontSize: 11, color: "rgba(200,192,248,0.5)", marginBottom: 10 }}>Catch falling vials. Accuracy determines potion quality.</p>
+          <Btn small variant="amber" data-testid="brew-vial" onClick={() => { const c = 3 * bundleCount; if (craftMats.herb >= c) { setCraftMats(m => ({ ...m, herb: m.herb - c })); setVialsCaught(0); setVialsMissed(0); setMini("vial"); } else notify(`Need ${c} Herb`, "#d84838"); }}>Start Catching</Btn>
+        </Panel>
+      </>}
+    </>}
+
+    {mini === "smith" && (
+      <Panel style={{ textAlign: "center", borderColor: "#e0a523", padding: 25 }}>
+        <b style={{ color: "#e0a523", fontSize: 16 }}>Forging {smithType === "weapon" ? "Weapon" : "Armor"}...</b>
+        <p style={{ fontSize: 12, marginBottom: 18, color: "rgba(255,255,255,0.6)" }}>Strike when the marker hits the green zone! ({INGREDIENTS[ingredient].name})</p>
+        <div style={{ width: "100%", height: 36, background: "rgba(0,0,0,0.6)", position: "relative", marginBottom: 18, borderRadius: 6, overflow: "hidden", border: "1px solid rgba(255,255,255,0.1)" }}>
+          <div style={{ position: "absolute", left: "30%", width: "40%", height: "100%", background: "rgba(232,185,56,0.4)" }} />
+          <div style={{ position: "absolute", left: "45%", width: "10%", height: "100%", background: "rgba(62,201,149,0.85)" }} />
+          <div style={{ position: "absolute", left: `${pos}%`, width: 5, height: "100%", background: "#fff", transform: "translateX(-50%)", boxShadow: "0 0 12px #fff" }} />
         </div>
         
-        <Btn variant="gold" onClick={() => {
+        <Btn variant="gold" data-testid="anvil-strike" onClick={() => {
           const currentPos = posRef.current;
           const isPerfect = currentPos >= 45 && currentPos <= 55;
           const isGood = currentPos >= 30 && currentPos <= 70;
           
           let points = 0;
-          if (isPerfect) { points = 2; if(window.SFX) window.SFX.anvilHit(); } 
-          else if (isGood) { points = 1; if(window.SFX) window.SFX.anvilHit(); } 
-          else { if(window.SFX) window.SFX.anvilMiss(); }
+          if (isPerfect) { points = 2; if(window.SFX) window.SFX.anvilHit?.() || window.SFX.click(); } 
+          else if (isGood) { points = 1; if(window.SFX) window.SFX.anvilHit?.() || window.SFX.click(); } 
+          else { if(window.SFX) window.SFX.anvilMiss?.() || window.SFX.attack(); }
           
           setSmithScore(s => s + points);
           
-          if (hits + 1 >= 8) {
+          if (hits + 1 >= smithGoal) {
             setMini(null);
             const finalScore = smithScore + points;
+            const maxScore = smithGoal * 2;
+            const accuracy = finalScore / maxScore;
+            const ingredient_bonus = INGREDIENTS[ingredient].qualityBonus;
+            const totalScore = finalScore + ingredient_bonus;
             
-            if (finalScore >= 13) {
-              const newWep = { id: "craft_" + Date.now(), name: "Masterwork Blade", atk: 45, price: 2500, isCrafted: true };
-              setCraftedShop(prev => [...prev, newWep]); setOwnedWeapons(w => [...w, newWep.id]);
-              notify("Legendary Mastercraft created!", "#ffd966");
-            } else if (finalScore >= 7) {
-              const newWep = { id: "craft_" + Date.now(), name: "Forged Steel", atk: 20, price: 800, isCrafted: true };
-              setOwnedWeapons(w => [...w, newWep.id]);
-              notify("Forged a solid weapon.", "#3ec995");
+            const masterworkThreshold = maxScore * 0.85;
+            const goodThreshold = maxScore * 0.55;
+            
+            if (smithType === "weapon") {
+              for (let i = 0; i < bundleCount; i++) {
+                let wep;
+                if (totalScore >= masterworkThreshold) {
+                  wep = { id: "craft_w_" + Date.now() + "_" + i, name: `Masterwork ${INGREDIENTS[ingredient].name.split(" ")[0]} Blade`, atk: 35 + ingredient_bonus * 6, price: 2200 + ingredient_bonus * 500, isCrafted: true };
+                  notify(`Mastercraft! ${wep.name}`, "#ffd966");
+                } else if (totalScore >= goodThreshold) {
+                  wep = { id: "craft_w_" + Date.now() + "_" + i, name: `Forged ${INGREDIENTS[ingredient].name.split(" ")[0]}`, atk: 18 + ingredient_bonus * 4, price: 700 + ingredient_bonus * 200, isCrafted: true };
+                  notify(`Forged ${wep.name}`, "#3ec995");
+                } else {
+                  setBronze(b => b + 30); notify(`Scrap. Salvaged 30 B.`, "#e85c3a"); continue;
+                }
+                setCraftedShop(prev => [...prev, wep]); setOwnedWeapons(w => [...w, wep.id]);
+              }
             } else {
-              setBronze(b => b + finalScore * 20);
-              notify(`Scrap metal. Salvaged ${finalScore * 20} B.`, "#e85c3a");
+              // Armor
+              for (let i = 0; i < bundleCount; i++) {
+                let arm;
+                if (totalScore >= masterworkThreshold) {
+                  arm = { id: "craft_a_" + Date.now() + "_" + i, name: `Masterwork ${INGREDIENTS[ingredient].name.split(" ")[0]} Plate`, def: 22 + ingredient_bonus * 4, price: 2000 + ingredient_bonus * 400, isCrafted: true };
+                  notify(`Mastercraft! ${arm.name}`, "#ffd966");
+                } else if (totalScore >= goodThreshold) {
+                  arm = { id: "craft_a_" + Date.now() + "_" + i, name: `Forged ${INGREDIENTS[ingredient].name.split(" ")[0]} Mail`, def: 12 + ingredient_bonus * 2, price: 600 + ingredient_bonus * 150, isCrafted: true };
+                  notify(`Forged ${arm.name}`, "#3ec995");
+                } else {
+                  setBronze(b => b + 30); notify(`Scrap. Salvaged 30 B.`, "#e85c3a"); continue;
+                }
+                if (setOwnedArmors) setOwnedArmors(a => [...a, arm.id]);
+                // Add to crafted shop so it shows in shop
+                setCraftedShop(prev => [...prev, arm]);
+              }
             }
           } else { setHits(h => h + 1); }
         }}>Strike Anvil</Btn>
-        <p style={{ fontSize: 11, marginTop: 15 }}>Strikes: {hits}/8 | Score: {smithScore}/16</p>
+        <p style={{ fontSize: 11, marginTop: 14, color: "rgba(255,255,255,0.55)" }}>Strikes: {hits}/{smithGoal} | Score: {smithScore}/{smithGoal * 2}</p>
       </Panel>
-    ) : (
-      <Panel style={{ textAlign: "center", borderColor: "#3ec995" }}>
+    )}
+    
+    {mini === "potion" && (
+      <Panel style={{ textAlign: "center", borderColor: "#3ec995", padding: 25 }}>
         <b style={{ color: "#3ec995", fontSize: 16 }}>Pouring Vials...</b>
-        <p style={{ fontSize: 13, margin: "10px 0 20px" }}>Target Mixture: <strong style={{ color: potionTarget.toLowerCase() }}>{potionTarget}</strong></p>
-        <div style={{ display: "flex", gap: 10, justifyContent: "center", marginBottom: 20, flexWrap: "wrap" }}>
+        <p style={{ fontSize: 13, margin: "10px 0 20px" }}>Target: <strong style={{ color: potionTarget.toLowerCase() }}>{potionTarget}</strong></p>
+        <div style={{ display: "flex", gap: 12, justifyContent: "center", marginBottom: 20, flexWrap: "wrap" }}>
           {P_COLORS[potionDiff].map(c => (
-            <div key={c} onClick={() => mixColor(c)} style={{ width: 50, height: 80, background: c.toLowerCase(), borderRadius: "0 0 20px 20px", cursor: "pointer", border: "2px solid rgba(255,255,255,0.5)", opacity: potionMix.length < P_RECIPES[potionDiff][potionTarget].length ? 1 : 0.5 }} />
+            <div key={c} onClick={() => mixColor(c)} style={{ width: 56, height: 90, background: c.toLowerCase(), borderRadius: "0 0 24px 24px", cursor: "pointer", border: "2px solid rgba(255,255,255,0.4)", boxShadow: `0 0 12px ${c.toLowerCase()}`, opacity: potionMix.length < P_RECIPES[potionDiff][potionTarget].length ? 1 : 0.5, transition: "transform 0.15s" }} 
+              onMouseOver={(e) => e.currentTarget.style.transform = "scale(1.1)"}
+              onMouseOut={(e) => e.currentTarget.style.transform = "scale(1)"}
+            />
           ))}
         </div>
-        <p style={{ fontSize: 11 }}>Vial contains: {potionMix.join(" + ") || "Empty"}</p>
+        <p style={{ fontSize: 12, color: "rgba(255,255,255,0.6)" }}>Vial contains: {potionMix.join(" + ") || "Empty"}</p>
+      </Panel>
+    )}
+    
+    {mini === "vial" && (
+      <Panel style={{ borderColor: "#ff8c00", padding: 25 }}>
+        <b style={{ color: "#ff8c00", fontSize: 16, display: "block", marginBottom: 8, textAlign: "center" }}>Catch the Vials!</b>
+        <p style={{ fontSize: 12, color: "rgba(255,255,255,0.6)", marginBottom: 14, textAlign: "center" }}>Move the catcher to align with falling vials. {vialsCaught} caught / {vialsMissed} missed (of 8)</p>
+        <div style={{ position: "relative", width: "100%", height: 260, background: "linear-gradient(180deg, rgba(255,140,0,0.05), rgba(0,0,0,0.4))", borderRadius: 12, overflow: "hidden", border: "1px solid rgba(255,140,0,0.3)" }} 
+          onMouseMove={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const x = ((e.clientX - rect.left) / rect.width) * 100;
+            setCatcherPos(Math.max(0, Math.min(100, x)));
+          }}>
+          {/* Vial falling */}
+          {vialActive && vialPos >= 0 && (
+            <div style={{ position: "absolute", left: `${vialPos}%`, top: `${vialPos * 2.5}%`, transform: "translateX(-50%)", width: 24, height: 36, background: "linear-gradient(180deg, #87cefa, #4d80a8)", borderRadius: "0 0 12px 12px", border: "1.5px solid #fff", boxShadow: "0 0 12px #87cefa" }} />
+          )}
+          {/* Catcher */}
+          <div style={{ position: "absolute", left: `${catcherPos}%`, bottom: 10, transform: "translateX(-50%)", width: 80, height: 18, background: "linear-gradient(180deg, #d49830, #8a5a19)", borderRadius: 8, border: "2px solid #ffd966", boxShadow: "0 0 12px rgba(255,217,102,0.5)" }} />
+        </div>
+        <p style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", marginTop: 10, textAlign: "center" }}>Move your mouse left/right inside the box.</p>
       </Panel>
     )}
   </div>;
 }
 export function GambleView({ bronze, setBronze, notify, setTotalEarned }) {
+  const [tab, setTab] = useState("wheel");
   const [wheelAng, setWheelAng] = useState(0);
   const [wheelSp, setWheelSp] = useState(false);
+  const [wheelLastWin, setWheelLastWin] = useState(null);
   const [bjPlayer, setBjPlayer] = useState([]);
   const [bjDealer, setBjDealer] = useState([]);
   const [bjState, setBjState] = useState("idle");
   const [bjBet, setBjBet] = useState(0);
   const [bjMsg, setBjMsg] = useState("");
+  // Slot machine
+  const [slotReels, setSlotReels] = useState(["🍀", "🔔", "💎"]);
+  const [slotSpinning, setSlotSpinning] = useState(false);
+  const [slotMsg, setSlotMsg] = useState("");
+  // Dice Duel
+  const [diceState, setDiceState] = useState("idle");
+  const [pDice, setPDice] = useState([0, 0]);
+  const [oDice, setODice] = useState([0, 0]);
+  const [diceBet, setDiceBet] = useState(0);
+  const [diceMsg, setDiceMsg] = useState("");
+  // High-Low
+  const [hlCard, setHlCard] = useState(null);
+  const [hlBet, setHlBet] = useState(0);
+  const [hlMsg, setHlMsg] = useState("");
+  const [hlStreak, setHlStreak] = useState(0);
+  const [hlState, setHlState] = useState("idle");
 
   function spinWheel(bet) {
     if (wheelSp || bronze < bet) return notify("Cannot spin.", "#d84838");
-    setBronze(b => b - bet); setWheelSp(true); SFX.spin?.() || SFX.click();
-    const final = wheelAng + 1080 + Math.floor(Math.random() * 360);
-    setWheelAng(final);
+    setBronze(b => b - bet); setWheelSp(true); 
+    if (window.SFX) (window.SFX.spin || window.SFX.click)();
+    const finalAng = wheelAng + 1440 + Math.floor(Math.random() * 360);
+    setWheelAng(finalAng);
     setTimeout(() => {
-      const slot = Math.floor(((360 - (((final % 360) + 360) % 360)) % 360) / 45);
+      const slot = Math.floor(((360 - (((finalAng % 360) + 360) % 360)) % 360) / 45);
       const mults = [0, 2, 0, 1.5, 0, 5, 0, 10]; // 8 slots
+      const labels = ["LOSE","2x","LOSE","1.5x","LOSE","5x","LOSE","10x"];
       const win = Math.floor(bet * mults[slot]);
-      if (win > 0) { setBronze(b => b + win); setTotalEarned(t => t + win); notify(`Won ${win} B!`, "#ffd966"); if (mults[slot] >= 5) SFX.reward(); else SFX.reward(); }
-      else { notify("Lost.", "#d84838"); SFX.defeat(); }
+      if (win > 0) { setBronze(b => b + win); setTotalEarned(t => t + win); notify(`Won ${win} B!`, "#ffd966"); window.SFX?.reward(); setWheelLastWin({win, label: labels[slot]}); }
+      else { notify("Lost.", "#d84838"); window.SFX?.defeat(); setWheelLastWin({win:0,label:labels[slot]}); }
       setWheelSp(false);
-    }, 2500);
+    }, 2700);
   }
 
-  function dC() { const v = Math.floor(Math.random() * 13) + 1; return v > 10 ? 10 : v === 1 ? 11 : v; }
-  function vH(h) { let v = h.reduce((a, b) => a + b, 0), a = h.filter(c => c === 11).length; while (v > 21 && a > 0) { v -= 10; a--; } return v; }
-
+  // ---------- BLACKJACK with proper suits ----------
+  const SUITS = ["♠", "♥", "♦", "♣"];
+  function dCard() {
+    const v = Math.floor(Math.random() * 13) + 1;
+    const suit = SUITS[Math.floor(Math.random() * 4)];
+    return { v: v > 10 ? 10 : v === 1 ? 11 : v, raw: v, suit };
+  }
+  function vH(h) { let v = h.reduce((a, b) => a + b.v, 0), a = h.filter(c => c.v === 11).length; while (v > 21 && a > 0) { v -= 10; a--; } return v; }
+  function cardLabel(c) { return c.raw === 1 ? "A" : c.raw === 11 ? "J" : c.raw === 12 ? "Q" : c.raw === 13 ? "K" : c.raw; }
+  
   function startBj(bet) {
     if (bronze < bet) return notify("Cannot bet.", "#d84838");
-    setBronze(b => b - bet); setBjBet(bet); setBjPlayer([dC(), dC()]); setBjDealer([dC(), dC()]); setBjState("playing"); setBjMsg("");
+    setBronze(b => b - bet); setBjBet(bet); 
+    setBjPlayer([dCard(), dCard()]); setBjDealer([dCard(), dCard()]); 
+    setBjState("playing"); setBjMsg("");
   }
   function hitBj() {
-    const np = [...bjPlayer, dC()]; setBjPlayer(np);
-    if (vH(np) > 21) { setBjState("done"); setBjMsg("Bust! You lose."); SFX.defeat(); }
+    const np = [...bjPlayer, dCard()]; setBjPlayer(np);
+    if (vH(np) > 21) { setBjState("done"); setBjMsg("Bust! You lose."); window.SFX?.defeat(); }
   }
   function standBj() {
-    let nd = [...bjDealer]; while (vH(nd) < 17) nd.push(dC());
+    let nd = [...bjDealer]; while (vH(nd) < 17) nd.push(dCard());
     setBjDealer(nd); setBjState("done");
     const pv = vH(bjPlayer), dv = vH(nd);
-    if (dv > 21 || pv > dv) { const win = bjBet * 2; setBronze(b => b + win); setTotalEarned(t => t + win); setBjMsg(`You win ${win} B!`); SFX.reward(); }
+    if (dv > 21 || pv > dv) { const win = bjBet * 2; setBronze(b => b + win); setTotalEarned(t => t + win); setBjMsg(`You win ${win} B!`); window.SFX?.reward(); }
     else if (pv === dv) { setBronze(b => b + bjBet); setTotalEarned(t => t + bjBet); setBjMsg("Push. Bet returned."); }
-    else { setBjMsg("Dealer wins."); SFX.defeat(); }
+    else { setBjMsg("Dealer wins."); window.SFX?.defeat(); }
   }
 
-  const Card = ({ v, hidden }) => <div style={{ width: 45, height: 65, background: hidden ? "linear-gradient(135deg,#5b4fd4,#1c164c)" : "#f2edff", color: hidden ? "#fff" : "#000", borderRadius: 6, border: "1px solid rgba(255,255,255,0.2)", display: "grid", placeItems: "center", fontWeight: 900, fontSize: 18, boxShadow: "0 4px 10px rgba(0,0,0,0.3)" }}>{hidden ? "?" : v === 11 ? "A" : v}</div>;
+  const Card = ({ card, hidden }) => {
+    if (hidden) return <div style={{ width: 50, height: 72, background: "linear-gradient(135deg,#5b4fd4,#1c164c)", borderRadius: 8, border: "2px solid rgba(255,255,255,0.3)", display: "grid", placeItems: "center", fontWeight: 900, fontSize: 24, color: "rgba(255,255,255,0.6)", boxShadow: "0 4px 12px rgba(0,0,0,0.5)" }}>?</div>;
+    const isRed = card.suit === "♥" || card.suit === "♦";
+    return <div style={{ width: 50, height: 72, background: "linear-gradient(135deg, #fff 0%, #f4ecff 100%)", borderRadius: 8, border: "2px solid rgba(255,255,255,0.3)", display: "flex", flexDirection: "column", justifyContent: "space-between", padding: "4px 6px", color: isRed ? "#c43030" : "#1a1325", fontWeight: 900, boxShadow: "0 4px 12px rgba(0,0,0,0.5)" }}>
+      <span style={{ fontSize: 12 }}>{cardLabel(card)}</span>
+      <span style={{ fontSize: 18, textAlign: "center" }}>{card.suit}</span>
+      <span style={{ fontSize: 12, textAlign: "right", transform: "rotate(180deg)" }}>{cardLabel(card)}</span>
+    </div>;
+  };
+
+  // ---------- SLOT MACHINE ----------
+  const SLOT_ICONS = ["🍀","🔔","💎","⭐","7️⃣","🍒"];
+  function spinSlots(bet) {
+    if (slotSpinning || bronze < bet) return;
+    setBronze(b => b - bet); setSlotSpinning(true); setSlotMsg("Spinning...");
+    if (window.SFX) (window.SFX.spin || window.SFX.click)();
+    // Animate reels (each stops at different time)
+    const finals = [SLOT_ICONS[Math.floor(Math.random()*SLOT_ICONS.length)], SLOT_ICONS[Math.floor(Math.random()*SLOT_ICONS.length)], SLOT_ICONS[Math.floor(Math.random()*SLOT_ICONS.length)]];
+    let spinInt = setInterval(() => { 
+      setSlotReels([SLOT_ICONS[Math.floor(Math.random()*SLOT_ICONS.length)], SLOT_ICONS[Math.floor(Math.random()*SLOT_ICONS.length)], SLOT_ICONS[Math.floor(Math.random()*SLOT_ICONS.length)]]); 
+    }, 80);
+    setTimeout(() => { 
+      clearInterval(spinInt); 
+      setSlotReels(finals); 
+      setSlotSpinning(false);
+      const allSame = finals[0] === finals[1] && finals[1] === finals[2];
+      const twoSame = finals[0] === finals[1] || finals[1] === finals[2] || finals[0] === finals[2];
+      let win = 0;
+      if (allSame) { 
+        const mult = finals[0] === "7️⃣" ? 25 : finals[0] === "💎" ? 15 : finals[0] === "⭐" ? 10 : 5; 
+        win = bet * mult; 
+      }
+      else if (twoSame) { win = bet; } // break even
+      if (win > 0) { 
+        setBronze(b => b + win); setTotalEarned(t => t + win); 
+        setSlotMsg(`✨ Won ${win} B! ✨`); 
+        window.SFX?.reward(); 
+      } else { 
+        setSlotMsg("No match — try again."); 
+        window.SFX?.defeat(); 
+      }
+    }, 2200);
+  }
+
+  // ---------- DICE DUEL ----------
+  function rollDice() { return [Math.floor(Math.random()*6)+1, Math.floor(Math.random()*6)+1]; }
+  function startDice(bet) {
+    if (bronze < bet) return;
+    setBronze(b => b - bet); setDiceBet(bet); setDiceState("rolling");
+    setPDice([0,0]); setODice([0,0]); setDiceMsg("");
+    if (window.SFX) (window.SFX.click)();
+    // Animate
+    let n = 0;
+    const interval = setInterval(() => {
+      setPDice(rollDice()); setODice(rollDice());
+      n++;
+      if (n >= 10) {
+        clearInterval(interval);
+        const pf = rollDice(), of = rollDice();
+        setPDice(pf); setODice(of);
+        const pSum = pf[0]+pf[1], oSum = of[0]+of[1];
+        if (pSum > oSum) {
+          const win = bet * 2;
+          setBronze(b => b + win); setTotalEarned(t => t + win);
+          setDiceMsg(`You rolled ${pSum} vs ${oSum}. Won ${win} B!`); window.SFX?.reward();
+        } else if (pSum === oSum) {
+          setBronze(b => b + bet); setDiceMsg(`Tie! Bet returned.`);
+        } else {
+          setDiceMsg(`You rolled ${pSum} vs ${oSum}. Lost.`); window.SFX?.defeat();
+        }
+        setDiceState("done");
+      }
+    }, 120);
+  }
+
+  // ---------- HIGH-LOW ----------
+  function startHL(bet) {
+    if (bronze < bet) return;
+    setBronze(b => b - bet); setHlBet(bet); setHlStreak(0);
+    setHlCard(dCard()); setHlState("playing"); setHlMsg("Will the next card be higher or lower?");
+  }
+  function guessHL(dir) {
+    if (hlState !== "playing") return;
+    const next = dCard();
+    const correct = (dir === "high" && next.raw > hlCard.raw) || (dir === "low" && next.raw < hlCard.raw);
+    if (correct) {
+      const newStreak = hlStreak + 1;
+      setHlStreak(newStreak);
+      setHlCard(next);
+      setHlMsg(`Correct! ${newStreak} in a row. Next?`);
+      window.SFX?.reward();
+    } else if (next.raw === hlCard.raw) {
+      setHlMsg(`Tie — push, draw again.`); setHlCard(next);
+    } else {
+      setHlMsg(`Wrong! You lose ${hlBet} B.`); setHlState("done"); window.SFX?.defeat();
+    }
+  }
+  function cashHL() {
+    if (hlState !== "playing" || hlStreak === 0) return;
+    const win = Math.floor(hlBet * Math.pow(1.7, hlStreak));
+    setBronze(b => b + win); setTotalEarned(t => t + win);
+    setHlMsg(`Cashed out ${win} B!`); setHlState("done"); window.SFX?.reward();
+  }
+
+  const TabBtn = ({ id, label, color }) => <button data-testid={`gamble-tab-${id}`} onClick={() => setTab(id)} style={{ padding: "8px 14px", borderRadius: 99, border: tab === id ? `2px solid ${color}` : "1px solid rgba(255,255,255,0.15)", background: tab === id ? `${color}22` : "transparent", color: tab === id ? color : "rgba(255,255,255,0.55)", fontWeight: 700, fontSize: 12, letterSpacing: "0.05em", cursor: "pointer", transition: "all 0.2s" }}>{label}</button>;
 
   return <div>
     <h2 style={{ fontSize: 18, fontWeight: 700, color: "#ff6bcb", marginBottom: 6 }}>Gambling Den</h2>
-
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(250px,1fr))", gap: 15 }}>
-      <Panel style={{ borderColor: "rgba(255,107,203,0.3)", textAlign: "center" }}>
-        <b style={{ color: "#ff6bcb" }}>The Wheel</b>
-        <div style={{ position: "relative", width: 160, height: 160, margin: "20px auto", overflow: "hidden", borderRadius: "50%" }}>
-          <div style={{ position: "absolute", top: 0, left: "50%", transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "10px solid transparent", borderRight: "10px solid transparent", borderTop: "20px solid #fff", zIndex: 10, filter: "drop-shadow(0 0 5px #fff)" }} />
-          {/* Hjulet som garanterat snurrar via inline transition */}
-          <div style={{ width: "100%", height: "100%", borderRadius: "50%", border: "3px solid rgba(255,107,203,0.5)", transform: `rotate(${wheelAng}deg)`, transition: wheelSp ? "transform 2.5s cubic-bezier(0.1, 0.8, 0.2, 1)" : "none", background: "conic-gradient(#222 0 45deg, #3ec995 45deg 90deg, #222 90deg 135deg, #a89df0 135deg 180deg, #222 180deg 225deg, #e0a523 225deg 270deg, #222 270deg 315deg, #ff6bcb 315deg 360deg)" }} />
-        </div>
-        <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>{[10, 50, 200].map(b => <Btn key={b} small disabled={wheelSp || bronze < b} onClick={() => spinWheel(b)}>Spin {b}</Btn>)}</div>
-      </Panel>
-
-      <Panel style={{ borderColor: "rgba(62,201,149,0.3)" }}>
-        <b style={{ color: "#3ec995" }}>Blackjack</b>
-        {bjState === "idle" ? <div style={{ marginTop: 20 }}>{[50, 100, 500].map(b => <Btn key={b} small variant="success" style={{ marginRight: 8 }} disabled={bronze < b} onClick={() => startBj(b)}>Bet {b}</Btn>)}</div> :
-          <div style={{ marginTop: 15 }}>
-            <p style={{ fontSize: 11, color: "#aaa", margin: "0 0 5px" }}>Dealer {bjState === "done" ? `(${vH(bjDealer)})` : ""}</p>
-            <div style={{ display: "flex", gap: 5, marginBottom: 15 }}>{bjDealer.map((c, i) => <Card key={i} v={c} hidden={bjState === "playing" && i > 0} />)}</div>
-            <p style={{ fontSize: 11, color: "#aaa", margin: "0 0 5px" }}>You ({vH(bjPlayer)})</p>
-            <div style={{ display: "flex", gap: 5, marginBottom: 15 }}>{bjPlayer.map((c, i) => <Card key={i} v={c} />)}</div>
-
-            {bjState === "playing" ? <div style={{ display: "flex", gap: 8 }}><Btn small variant="primary" onClick={hitBj}>Hit</Btn><Btn small variant="amber" onClick={standBj}>Stand</Btn></div> :
-              <div><p style={{ fontWeight: "bold", color: bjMsg.includes("win") ? "#3ec995" : "#d84838" }}>{bjMsg}</p><Btn small onClick={() => setBjState("idle")}>Play Again</Btn></div>}
-          </div>}
-      </Panel>
+    <p style={{ fontSize: 12, color: "rgba(255,107,203,0.55)", marginBottom: 14 }}>The house always... well, almost always wins.</p>
+    
+    <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
+      <TabBtn id="wheel" label="🎡 Wheel" color="#ff6bcb" />
+      <TabBtn id="bj" label="🂡 Blackjack" color="#3ec995" />
+      <TabBtn id="slot" label="🎰 Slots" color="#ffd966" />
+      <TabBtn id="dice" label="🎲 Dice Duel" color="#a89df0" />
+      <TabBtn id="hl" label="📈 High-Low" color="#ff8c00" />
     </div>
+
+    {tab === "wheel" && (
+      <Panel style={{ borderColor: "rgba(255,107,203,0.3)", textAlign: "center", padding: 25 }}>
+        <b style={{ color: "#ff6bcb", fontSize: 16 }}>The Wheel of Fortune</b>
+        <div style={{ position: "relative", width: 220, height: 220, margin: "20px auto", overflow: "visible" }}>
+          <div style={{ position: "absolute", top: -8, left: "50%", transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "14px solid transparent", borderRight: "14px solid transparent", borderTop: "28px solid #fff", zIndex: 10, filter: "drop-shadow(0 0 8px #fff)" }} />
+          <div style={{ width: "100%", height: "100%", borderRadius: "50%", border: "4px solid rgba(255,107,203,0.6)", boxShadow: "0 0 30px rgba(255,107,203,0.4), inset 0 0 30px rgba(255,107,203,0.2)", transform: `rotate(${wheelAng}deg)`, transition: wheelSp ? "transform 2.7s cubic-bezier(0.15, 0.85, 0.2, 1)" : "none", background: "conic-gradient(#1a0820 0 45deg, #3ec995 45deg 90deg, #1a0820 90deg 135deg, #a89df0 135deg 180deg, #1a0820 180deg 225deg, #e0a523 225deg 270deg, #1a0820 270deg 315deg, #ff6bcb 315deg 360deg)" }} />
+          <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: 30, height: 30, borderRadius: "50%", background: "radial-gradient(circle, #fff, #888)", border: "2px solid #ff6bcb", zIndex: 5 }} />
+        </div>
+        {wheelLastWin && <p style={{ fontSize: 13, color: wheelLastWin.win > 0 ? "#ffd966" : "rgba(232,92,58,0.6)", marginBottom: 14 }}>Last: <b>{wheelLastWin.label}</b> {wheelLastWin.win > 0 ? `(+${wheelLastWin.win} B)` : ""}</p>}
+        <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>{[10, 50, 200, 1000].map(b => <Btn key={b} small data-testid={`gamble-wheel-spin-${b}`} disabled={wheelSp || bronze < b} onClick={() => spinWheel(b)}>Spin {b} B</Btn>)}</div>
+      </Panel>
+    )}
+
+    {tab === "bj" && (
+      <Panel style={{ borderColor: "rgba(62,201,149,0.3)", padding: 25 }}>
+        <b style={{ color: "#3ec995", fontSize: 16 }}>Blackjack — Reach 21, beat the dealer</b>
+        {bjState === "idle" ? 
+          <div style={{ marginTop: 22 }}>
+            <p style={{ fontSize: 12, color: "rgba(200,192,248,0.55)", marginBottom: 10 }}>Choose your bet:</p>
+            {[50, 100, 500, 2000].map(b => <Btn key={b} small variant="success" style={{ marginRight: 8, marginBottom: 6 }} disabled={bronze < b} onClick={() => startBj(b)}>Bet {b} B</Btn>)}
+          </div>
+          :
+          <div style={{ marginTop: 18 }}>
+            <p style={{ fontSize: 11, color: "rgba(200,192,248,0.55)", margin: "0 0 6px" }}>Dealer {bjState === "done" ? `(${vH(bjDealer)})` : "(?)"}</p>
+            <div style={{ display: "flex", gap: 6, marginBottom: 18 }}>{bjDealer.map((c, i) => <Card key={i} card={c} hidden={bjState === "playing" && i > 0} />)}</div>
+            <p style={{ fontSize: 11, color: "rgba(200,192,248,0.55)", margin: "0 0 6px" }}>You ({vH(bjPlayer)})</p>
+            <div style={{ display: "flex", gap: 6, marginBottom: 18, flexWrap: "wrap" }}>{bjPlayer.map((c, i) => <Card key={i} card={c} />)}</div>
+
+            {bjState === "playing" ? 
+              <div style={{ display: "flex", gap: 8 }}>
+                <Btn small variant="primary" data-testid="bj-hit" onClick={hitBj}>Hit</Btn>
+                <Btn small variant="amber" data-testid="bj-stand" onClick={standBj}>Stand</Btn>
+              </div> :
+              <div><p style={{ fontWeight: 700, color: bjMsg.includes("win") ? "#3ec995" : "#d84838", marginBottom: 10 }}>{bjMsg}</p><Btn small data-testid="bj-replay" onClick={() => setBjState("idle")}>Play Again</Btn></div>
+            }
+          </div>
+        }
+      </Panel>
+    )}
+
+    {tab === "slot" && (
+      <Panel style={{ borderColor: "rgba(255,217,102,0.3)", padding: 25, textAlign: "center" }}>
+        <b style={{ color: "#ffd966", fontSize: 16 }}>Lucky Slots</b>
+        <div style={{ display: "flex", justifyContent: "center", gap: 8, margin: "20px 0", padding: "20px", background: "rgba(0,0,0,0.4)", borderRadius: 14, border: "2px solid rgba(255,217,102,0.4)" }}>
+          {slotReels.map((r, i) => (
+            <div key={i} style={{ width: 70, height: 80, background: "linear-gradient(180deg, #fff, #f0e8d8)", borderRadius: 10, display: "grid", placeItems: "center", fontSize: 40, boxShadow: "inset 0 0 12px rgba(0,0,0,0.3), 0 2px 8px rgba(0,0,0,0.5)", transform: slotSpinning ? `translateY(${(i+1)*4}px)` : "none", transition: "transform 0.1s" }}>
+              {r}
+            </div>
+          ))}
+        </div>
+        {slotMsg && <p style={{ fontSize: 13, color: slotMsg.includes("Won") ? "#ffd966" : "rgba(255,255,255,0.5)", marginBottom: 14 }}>{slotMsg}</p>}
+        <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>{[25, 100, 500].map(b => <Btn key={b} small variant="amber" data-testid={`slot-spin-${b}`} disabled={slotSpinning || bronze < b} onClick={() => spinSlots(b)}>Spin {b} B</Btn>)}</div>
+        <p style={{ fontSize: 10, color: "rgba(255,217,102,0.5)", marginTop: 14 }}>Triple match: 5x-25x payout · Two match: bet returned</p>
+      </Panel>
+    )}
+
+    {tab === "dice" && (
+      <Panel style={{ borderColor: "rgba(168,157,240,0.3)", padding: 25 }}>
+        <b style={{ color: "#a89df0", fontSize: 16 }}>Dice Duel — Beat the opponent's roll</b>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, margin: "20px 0" }}>
+          <div style={{ textAlign: "center", padding: 18, background: "rgba(168,157,240,0.06)", borderRadius: 12, border: "1px solid rgba(168,157,240,0.3)" }}>
+            <p style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", marginBottom: 8, letterSpacing: 1 }}>YOU</p>
+            <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>{pDice.map((d, i) => <div key={i} style={{ width: 50, height: 50, background: "#fff", color: "#1a1325", borderRadius: 8, display: "grid", placeItems: "center", fontWeight: 900, fontSize: 22, boxShadow: "0 4px 10px rgba(0,0,0,0.4)" }}>{d || "?"}</div>)}</div>
+            <p style={{ fontSize: 13, color: "#a89df0", marginTop: 8, fontWeight: 700 }}>{pDice[0]+pDice[1] || "—"}</p>
+          </div>
+          <div style={{ textAlign: "center", padding: 18, background: "rgba(232,92,58,0.06)", borderRadius: 12, border: "1px solid rgba(232,92,58,0.3)" }}>
+            <p style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", marginBottom: 8, letterSpacing: 1 }}>OPPONENT</p>
+            <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>{oDice.map((d, i) => <div key={i} style={{ width: 50, height: 50, background: "#1a0a14", color: "#fff", border: "2px solid #e85c3a", borderRadius: 8, display: "grid", placeItems: "center", fontWeight: 900, fontSize: 22, boxShadow: "0 4px 10px rgba(0,0,0,0.4)" }}>{d || "?"}</div>)}</div>
+            <p style={{ fontSize: 13, color: "#e85c3a", marginTop: 8, fontWeight: 700 }}>{oDice[0]+oDice[1] || "—"}</p>
+          </div>
+        </div>
+        {diceMsg && <p style={{ textAlign: "center", color: diceMsg.includes("Won") ? "#3ec995" : diceMsg.includes("Tie") ? "#ffd966" : "#e85c3a", fontWeight: 700, marginBottom: 14 }}>{diceMsg}</p>}
+        <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>{[100, 500, 2000].map(b => <Btn key={b} small data-testid={`dice-bet-${b}`} disabled={diceState === "rolling" || bronze < b} onClick={() => startDice(b)}>Roll {b} B</Btn>)}</div>
+      </Panel>
+    )}
+
+    {tab === "hl" && (
+      <Panel style={{ borderColor: "rgba(255,140,0,0.3)", padding: 25 }}>
+        <b style={{ color: "#ff8c00", fontSize: 16 }}>High-Low — Will it be higher or lower?</b>
+        {hlState === "idle" ?
+          <div style={{ marginTop: 22, textAlign: "center" }}>
+            <p style={{ fontSize: 12, color: "rgba(200,192,248,0.55)", marginBottom: 14 }}>Each correct guess multiplies your bet by 1.7x. Cash out anytime.</p>
+            <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>{[50, 200, 1000].map(b => <Btn key={b} small variant="amber" data-testid={`hl-start-${b}`} disabled={bronze < b} onClick={() => startHL(b)}>Start {b} B</Btn>)}</div>
+          </div>
+          :
+          <div style={{ marginTop: 18, textAlign: "center" }}>
+            <p style={{ fontSize: 11, color: "rgba(200,192,248,0.55)", marginBottom: 10 }}>Current card · Streak: {hlStreak}</p>
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: 18 }}>{hlCard && <Card card={hlCard} />}</div>
+            <p style={{ fontSize: 12, color: "#ff8c00", marginBottom: 14, fontWeight: 600 }}>{hlMsg}</p>
+            {hlState === "playing" ? <>
+              <div style={{ display: "flex", gap: 10, justifyContent: "center", marginBottom: 10 }}>
+                <Btn small variant="success" data-testid="hl-higher" onClick={() => guessHL("high")}>↑ Higher</Btn>
+                <Btn small variant="danger" data-testid="hl-lower" onClick={() => guessHL("low")}>↓ Lower</Btn>
+              </div>
+              {hlStreak > 0 && <Btn small variant="amber" data-testid="hl-cash" onClick={cashHL}>Cash out ({Math.floor(hlBet * Math.pow(1.7, hlStreak))} B)</Btn>}
+            </> : <Btn small data-testid="hl-replay" onClick={() => setHlState("idle")}>Play Again</Btn>}
+          </div>
+        }
+      </Panel>
+    )}
   </div>;
 }
 
