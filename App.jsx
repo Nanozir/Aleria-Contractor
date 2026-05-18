@@ -1290,7 +1290,7 @@ if (screen === "devil_scenario") {
       return <DevilScenario setScreen={setScreen} stats={stats} setStats={setStats} notify={notify} bronze={bronze} setBronze={setBronze} />;
   }
   if (screen === "equar_scenario") {
-      return <EquarScenario setScreen={setScreen} bronze={bronze} setBronze={setBronze} notify={notify} />
+      return <EquarScenario setScreen={setScreen} bronze={bronze} setBronze={setBronze} notify={notify} diff={diff} />
   }
   if (screen === "tenebrim_survival") {
       return <TenebrimScenario setScreen={setScreen} notify={notify} stats={stats} setStats={setStats} diff={diff} exportSave={exportSave} />;
