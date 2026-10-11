@@ -5,7 +5,7 @@ import CombatScreen from "./combat/CombatScreen";
 import LumenariFight from "./combat/LumenariFight";
 import { makeEnemy } from "./combat/engine";
 import Cinematic from "./cinematic/Cinematic";
-import DevilScenario from "./DevilScenario";
+import DevilScenario, { newDevilState, rankOf } from "./DevilScenario";
 import EquarScenario from "./EquarScenario";
 import TenebrimScenario from "./TenebrimScenario";
 
@@ -28,7 +28,7 @@ import {
 // ── 4. Importera Vyerna (Sub-skärmar) ──────────────────────────────────────
 import { 
   ShopView, SpellsView, SkillsView, ChurchView, GuildView, 
-  SleepView, CityView, CraftView, GambleView, TrainingView, EndgameView
+  SleepView, CraftView, GambleView, TrainingView, EndgameView
 } from "./Views";
 
 // ── Progress Save System ───────────────────────────────────────────────────
@@ -84,6 +84,7 @@ export default function App(){
   const [warnMonster,setWarnMonster]=useState(null);
   const [warnVisible,setWarnVisible]=useState(false);
   const [devilRep,setDevilRep]=useState(0);
+  const [devil,setDevil]=useState(newDevilState()); // Underworld: subtype, companion, sector pressure, works
   const [nobleInvite,setNobleInvite]=useState(false);
   const [leftUnderworld,setLeftUnderworld]=useState(false);
   const [declinedInvite,setDeclinedInvite]=useState(false);
@@ -281,7 +282,7 @@ export default function App(){
   function addLog(msg,type="info"){setLog(l=>[...l.slice(-70),{msg,type,id:Date.now()+Math.random()}]);}
 
   function exportSave(silent=false) {
-    const data = { diff, race, cls, stats, xp, bronze, weapon, weapon2, armor, ownedWeapons, ownedArmors, potions, doomsday, day, postDoomsday, devilRep, cityLevel, nobleQuestActive, craftedShop };
+    const data = { diff, race, cls, stats, xp, bronze, weapon, weapon2, armor, ownedWeapons, ownedArmors, potions, doomsday, day, postDoomsday, devilRep, devil, leftUnderworld, declinedInvite, spells, cityLevel, nobleQuestActive, craftedShop };
     try {
       localStorage.setItem("aleria_save_slot", JSON.stringify(data));
       if (!silent) notify("Game saved to browser memory!", "#3ec995");
@@ -340,6 +341,10 @@ export default function App(){
       if(parsed.day!==undefined) setDay(parsed.day); 
       if(parsed.postDoomsday!==undefined) setPostDoomsday(parsed.postDoomsday);
       if(parsed.devilRep!==undefined) setDevilRep(parsed.devilRep); 
+      if(parsed.devil) setDevil(parsed.devil);
+      if(parsed.leftUnderworld!==undefined) setLeftUnderworld(parsed.leftUnderworld);
+      if(parsed.declinedInvite!==undefined) setDeclinedInvite(parsed.declinedInvite);
+      if(parsed.spells) setSpells(parsed.spells);
       if(parsed.cityLevel) setCityLevel(parsed.cityLevel); 
       if(parsed.nobleQuestActive!==undefined) setNobleQuestActive(parsed.nobleQuestActive);
       if(parsed.craftedShop) setCraftedShop(parsed.craftedShop);
@@ -348,7 +353,7 @@ export default function App(){
       if (parsed.race?.id === "elf") setScreen("elf_scenario");
       else if (parsed.race?.id === "tenebrim") setScreen("tenebrim_survival");
       else if (parsed.cls?.id === "merchant") setScreen("equar_scenario");
-      else setScreen(parsed.race?.id === "devil" && !parsed.nobleQuestActive ? "underworld" : "overworld");
+      else setScreen(parsed.race?.id === "devil" && !parsed.leftUnderworld ? "underworld" : "overworld");
       setTab("map");
       notify("Save loaded successfully!", "#3ec995");
     } catch (err) { notify("Invalid save data.", "#d84838"); }
@@ -372,7 +377,7 @@ export default function App(){
     setUnlockedSkills([]); setRevealedSkills([]); setSpells(SURFACE_SPELLS.map(s=>({...s})));
     setSpellStudiedToday({}); setDoomsday(1); setDay(1); setPostDoomsday(false);
     setDaysSinceContract(0); setAdvRankIdx(0); setHasBadge(true); setHunterStars(1);
-    setDevilRep(0); setNobleInvite(false); setLeftUnderworld(false); setDeclinedInvite(false);
+    setDevilRep(0); setDevil(newDevilState()); setNobleInvite(false); setLeftUnderworld(false); setDeclinedInvite(false);
     setNobleQuestActive(false); setHousing("inn"); setOwnsHouse(false); setPhysicalLevel(0);
     setEndgameWave(0); setAllies(0);
     setLumenariPhase(1); setDoomsdayTriggered(false);
@@ -455,7 +460,7 @@ export default function App(){
   }
 
   function acceptInvite(){setNobleInvite(false);setLeftUnderworld(true);setSpells(p=>p.map(s=>s.combatUse?{...s,combatUse:{...s.combatUse,mpCost:Math.round(s.combatUse.mpCost*1.6)}}:s));addLog("You accept. Surface mana dims your spells.","sys");setScreen("devil_class");}
-  function declineInvite(){setNobleInvite(false);setDeclinedInvite(true);addLog("Underworld grows more dangerous.","sys");}
+  function declineInvite(){setNobleInvite(false);setDeclinedInvite(true);addLog("You stay. Ilvane says nothing — but your stipend goes up, and the patrols get harder.","sys");}
   function acceptNobleQuest(){setNobleQuestActive(true);notify("Noble Quest Accepted!","#ffd966");}
 
   function chooseHousing(opt){const o=SLEEP.find(x=>x.id===opt);if(o.id==="owned_house"&&!ownsHouse){notify("You don't own a house.","#b83a2a");return;}setHousing(opt);notify(`Lodging: ${o.name}.`,"#3ec995");setScreen("overworld");setTab("map");}
@@ -517,12 +522,16 @@ export default function App(){
     notify("Skill revealed.","#5b4fd4");
   }
 
-  function getBonusAtk(){return (weapon?.atk||0)+(race?.id==="tetrabrachian"?(weapon2?.atk||0):0)+(race?.atkBonus||0)+physicalLevel+getSkill("passive_atk");}
-  function getBonusDef(){return (armor?.def||0)+(race?.defBonus||0)+getSkill("passive_def")+(race?.id==="tetrabrachian"&&weapon2?.id!=="fists"?-3:0);}
+  function devilAtk(){if(race?.id!=="devil")return 0;return (devil.absorbed||0)+(devil.subtype==="kharvex"?2:0)+(devil.instability>=50?3:0);}
+  function devilDef(){if(race?.id!=="devil")return 0;return (devil.subtype==="syrakai"?6:0)+(devil.companion?.kind==="shellback"?3:0);}
+  function devilDodge(){if(race?.id!=="devil")return 0;return (devil.companion?.kind==="gloomstrider"?8:0)-(devil.instability>=50?5:0);}
+  function companionAllies(){const c=devil.companion;if(race?.id!=="devil"||!c)return 0;if(c.kind==="cindermaw")return c.bond>=3?2:1;return c.bond>=3?1:0;}
+  function getBonusAtk(){return devilAtk()+(weapon?.atk||0)+(race?.id==="tetrabrachian"?(weapon2?.atk||0):0)+(race?.atkBonus||0)+physicalLevel+getSkill("passive_atk");}
+  function getBonusDef(){return devilDef()+(armor?.def||0)+(race?.defBonus||0)+getSkill("passive_def")+(race?.id==="tetrabrachian"&&weapon2?.id!=="fists"?-3:0);}
   function rollDodge(){return Math.random()*100<((race?.dodge||5)+getSkill("passive_dodge"));}
 
   // ── Combat (engine in combat/engine.js, UI in combat/CombatScreen.jsx) ──
-  function combatCtx(){return{atk:getBonusAtk(),def:getBonusDef(),dodge:(race?.dodge||5)+getSkill("passive_dodge"),crit:0.08+(race?.id==="equar"?0.05:0),strikeBonus:getSkill("strike_bonus")};}
+  function combatCtx(){return{atk:getBonusAtk(),def:getBonusDef(),dodge:(race?.dodge||5)+getSkill("passive_dodge")+devilDodge(),crit:0.08+(race?.id==="equar"?0.05:0)+(devil.subtype==="veyrith"&&race?.id==="devil"?0.04:0),strikeBonus:getSkill("strike_bonus")};}
   function combatActions(){
     const learned=visibleSpells().filter(s=>s.learned&&s.combatUse);
     const ra=ATTACKS_BY_RACE[race?.id]||ATTACKS_BY_RACE.human;
@@ -530,18 +539,20 @@ export default function App(){
     return [...ra,...spellActs,...TACTICS];
   }
   function consumePotion(id){setPotions(prev=>{const i=prev.findIndex(x=>x.id===id);if(i<0)return prev;const n=[...prev];n.splice(i,1);return n;});}
-  function battlePlayer(){return{hp:stats.hp,maxHp:stats.maxHp,mp:race?.canSpell?stats.mp:0,maxMp:race?.canSpell?stats.maxMp:0,stamina:stats.stamina,maxStamina:stats.maxStamina};}
+  function battlePlayer(){return{immune:race?.id==="devil"&&devil.subtype==="syrakai"?["burn"]:[],hp:stats.hp,maxHp:stats.maxHp,mp:race?.canSpell?stats.mp:0,maxMp:race?.canSpell?stats.maxMp:0,stamina:stats.stamina,maxStamina:stats.maxStamina};}
 
   function startCombat(isUw){
     setCombatOrigin(screen);
     const dd=postDoomsday?5:doomsday;
     const ms=postDoomsday?5:dd<3?2:dd<6?3:dd<8?4:5;
-    const pool=isUw?UW_MONSTERS.filter(m=>m.star<=Math.max(3,ms)):MONSTERS.filter(m=>m.star<=ms&&m.star>=Math.max(1,ms-2));
+    // Underworld: mana-born things from the tunnels (crystones and crawlers early, fiends and crushers later)
+    const uwPool=[...UW_MONSTERS,...MONSTERS.filter(m=>["crystone","crawler","mana_horror","ritfien"].includes(m.id))];
+    const pool=isUw?uwPool.filter(m=>m.star<=ms+1&&m.star>=Math.max(1,ms-1)):MONSTERS.filter(m=>m.star<=ms&&m.star>=Math.max(1,ms-2));
     const num=diff?.enemies||2;
     const enemies=Array.from({length:num},()=>{
       const b=pool[Math.floor(Math.random()*pool.length)];
-      const hpScale=((isUw?1.4:1)+dd*0.08+(declinedInvite?0.3:0))*(diff?.hpMult||1);
-      const atkScale=((isUw?1.3:1)+dd*0.06+(declinedInvite?0.25:0))*(diff?.enemyAtk||1);
+      const hpScale=((isUw?1.15:1)+dd*0.08+(declinedInvite?0.2:0))*(diff?.hpMult||1);
+      const atkScale=((isUw?1.1:1)+dd*0.06+(declinedInvite?0.15:0))*(diff?.enemyAtk||1);
       return makeEnemy(b,{hp:hpScale,atk:atkScale});
     });
     const highStar=Math.max(...enemies.map(e=>e.star));
@@ -549,8 +560,23 @@ export default function App(){
     if(highStar>thr){const wm=enemies.find(e=>e.star===highStar);setWarnMonster(wm);setWarnVisible(true);SFX.warn();setTimeout(()=>{setWarnVisible(false);setTimeout(()=>launchCombat(enemies),350);},2500);}
     else launchCombat(enemies);
   }
+  function startDeepPatrol(){
+    setCombatOrigin(screen);
+    const pool=[...UW_MONSTERS.filter(m=>m.star>=4),...MONSTERS.filter(m=>m.star===5)];
+    const sc=(1.5+doomsday*0.08)*(diff?.hpMult||1);
+    const enemies=Array.from({length:Math.max(1,(diff?.enemies||2)-1)},()=>makeEnemy(pool[Math.floor(Math.random()*pool.length)],{hp:sc,atk:(1.35+doomsday*0.06)*(diff?.enemyAtk||1)}));
+    launchCombat(enemies,{deep:true});
+  }
+  function uwSleep(){
+    const opt=SLEEP[1];
+    setStats(s=>({...s,hp:s.maxHp,mp:s.maxMp,stamina:s.maxStamina}));
+    setSpellStudiedToday({});setDay(d=>d+1);
+    if(!postDoomsday)setDoomsday(d=>Math.min(10,d+0.2));
+    addLog("You sleep in your quarters. The siphons hum through the walls.","sys");
+    if(window.SFX&&window.SFX.sleep)window.SFX.sleep();
+  }
   function launchCombat(enemies,opts={}){
-    setCombat({enemies,mode:opts.mode||"normal",wave:opts.wave||0,key:Date.now()});
+    setCombat({enemies,mode:opts.mode||"normal",wave:opts.wave||0,deep:!!opts.deep,key:Date.now()});
     setCombatResult(null);setCombatSummary(null);
     setScreen("combat");
     if((opts.mode||"normal")==="normal"){setDaysSinceContract(0);if(race?.id==="devil"&&!leftUnderworld)setDevilRep(r=>r+1);}
@@ -562,7 +588,7 @@ export default function App(){
     setStats(s=>({...s,hp:Math.max(0,Math.round(fp.hp)),mp:race?.canSpell?Math.round(fp.mp):s.mp,stamina:Math.round(fp.stamina)}));
     setCombatResult(result);
     if(combat?.mode==="doomsday"){
-      setAllies(battle.allies);
+      setAllies(Math.max(0,battle.allies-companionAllies()));
       setCombatSummary(result==="win"?{title:`Wave ${combat.wave+1} of 5 holds.`,lines:[combat.wave>=4?"The horde thins. Above the city, the sky begins to crack.":"Another wave is already climbing out of the dark."]}:{title:"The line breaks.",lines:["You are dragged back behind the barricades."]});
       return;
     }
@@ -580,7 +606,16 @@ export default function App(){
       if(cls?.id==="adventurer"&&hasBadge&&advRankIdx<5){const newXp=xp+totalXp;if(newXp>=RANK_THRESHOLDS[advRankIdx]){setAdvRankIdx(i=>i+1);SFX.rankup();notify(`Rank up: ${RANKS[advRankIdx+1]}!`,"#3ec995");lines.push(`Rank up → ${RANKS[advRankIdx+1]}`);}}
       if(cls?.id==="hunter"){const ns=Math.min(5,Math.floor((xp+totalXp)/300)+1);if(ns>hunterStars){setHunterStars(ns);SFX.rankup();notify(`Hunter ★${ns}`,"#3ec995");lines.push(`Hunter qualification → ★${ns}`);}}
       if(fp.hp<=fp.maxHp*0.15){const nc=nearDeathWins+1;setNearDeathWins(nc);lines.push("A near-death victory. Something in you hardens.");if(nc>=3&&!techniqueUnlocked){setTechniqueUnlocked(true);notify("Technique stirs.","#9a6c10");}}
-      setCombatSummary({title:"Victory",lines});
+      let absorb=false;
+      if(race?.id==="devil"&&!leftUnderworld){
+        const relief=combat?.deep?25:6;
+        setDevil(d=>({...d,pressure:Math.max(0,d.pressure-relief)}));
+        lines.push(`Sector pressure -${relief}`);
+        if(combat?.deep){setDevilRep(r=>r+2);lines.push("Rep +2");}
+      }
+      if(race?.id==="devil"&&devil.subtype==="kharvex")absorb=true;
+      if(devil.companion&&race?.id==="devil"&&Math.random()<0.25){setDevil(d=>({...d,companion:{...d.companion,bond:Math.min(5,d.companion.bond+1)}}));lines.push(`${devil.companion.name}'s bond grows`);}
+      setCombatSummary({title:"Victory",lines,absorb});
     }else{
       setCombatSummary({title:diff?.perma?"You have fallen.":"You collapse.",lines:[diff?.perma?"Permadeath: this life is over.":"Someone drags you back to town. You wake up sore and lighter in the purse."]});
       if(diff?.perma)addLog("Permadeath: progress lost.","sys");
@@ -588,11 +623,34 @@ export default function App(){
     setTimeout(()=>{try{exportSave(true);}catch(e){}},500);
   }
 
-  function startSiphon(){const nodes=Array.from({length:6},(_,i)=>({id:i,level:Math.random()*30+10,rising:Math.random()*1.8+1.0+doomsday*0.15}));setSiphonNodes(nodes);setSiphonScore(0);setSiphonActive(true);setSiphonTime(30);setSiphonResult(null);setScreen("siphon");}
+  // ── Siphoning: stable / volatile / cracked nodes. Devils drain their sector's pressure here. ──
+  function startSiphon(){
+    const slow=race?.id==="devil"&&devil.subtype==="syrakai"?0.75:1;
+    const types=["stable","stable","volatile","volatile","cracked","stable"].sort(()=>Math.random()-0.5);
+    const nodes=types.map((type,i)=>({id:i,type,level:Math.random()*30+10,rising:(Math.random()*1.4+1.0+doomsday*0.12)*(type==="volatile"?1.6:1)*slow}));
+    setSiphonNodes(nodes);setSiphonScore(0);setSiphonActive(true);setSiphonTime(30);setSiphonResult(null);setScreen("siphon");
+  }
   useEffect(()=>{if(!siphonActive)return;siphonTickRef.current=setInterval(()=>{setSiphonNodes(p=>p.map(n=>{let lv=n.level+n.rising;if(lv>100)lv=100;return{...n,level:lv,danger:lv>80};}));setSiphonTime(t=>{if(t<=1){clearInterval(siphonTickRef.current);setSiphonActive(false);setSiphonResult("complete");return 0;}return t-1;});},700);return()=>clearInterval(siphonTickRef.current);},[siphonActive]);
-  function tapNode(id){if(!siphonActive)return;SFX.siphon();setSiphonNodes(p=>p.map(n=>n.id===id?{...n,level:Math.max(0,n.level-40)}:n));setSiphonScore(s=>s+10);}
+  function tapNode(id){
+    if(!siphonActive)return;SFX.siphon();
+    const n=siphonNodes.find(x=>x.id===id); if(!n||n.level>=100)return;
+    const pts=n.type==="volatile"?15:n.type==="cracked"?12:10;
+    setSiphonNodes(p=>p.map(x=>x.id===id?{...x,level:Math.max(0,x.level-(x.type==="cracked"?30:40))}:x));
+    setSiphonScore(s=>s+pts);
+    if(race?.id==="devil"&&devil.subtype==="veyrith")setStats(s=>({...s,mp:Math.min(s.maxMp,s.mp+2)}));
+  }
   function leaveSiphon(){if(siphonTickRef.current)clearInterval(siphonTickRef.current);setSiphonActive(false);setSiphonResult(null);setScreen(race?.id==="devil"&&!leftUnderworld?"underworld":"overworld");setTab("map");}
-  useEffect(()=>{if(siphonResult==="complete"){const ov=siphonNodes.filter(n=>n.level>=100).length;if(ov>0&&!postDoomsday)setDoomsday(d=>Math.min(10,d+ov*0.5));const r=Math.round(siphonScore*0.8+20);setBronze(b=>b+r);setTotalEarned(t=>t+r);addLog(`Shift done. +${r} Bronze.`,"reward");if(race?.id==="devil"&&!leftUnderworld)setDevilRep(r2=>r2+(ov===0?2:1));}},[siphonResult]);
+  useEffect(()=>{if(siphonResult==="complete"){
+    const ov=siphonNodes.filter(n=>n.level>=100);
+    if(ov.length>0&&!postDoomsday)setDoomsday(d=>Math.min(10,d+ov.length*0.5));
+    const r=Math.round(siphonScore*0.8+20);setBronze(b=>b+r);setTotalEarned(t=>t+r);
+    addLog(`Shift done. +${r} Bronze.${ov.length?` ${ov.length} node(s) overflowed.`:" Clean shift."}`,"reward");
+    if(race?.id==="devil"&&!leftUnderworld){
+      setDevilRep(r2=>r2+(ov.length===0?2:1));
+      setDevil(d=>({...d,pressure:Math.max(0,d.pressure-Math.round(siphonScore/6)+ov.length*6)}));
+    }
+    if(ov.some(n=>n.type==="cracked"))setSiphonResult("breach");
+  }},[siphonResult]);
 
 // ── Colosseum Logik ────────────────────────────────────────────────────────
   function startColosseum() {
@@ -1058,13 +1116,14 @@ if (screen === "devil_scenario") {
       return <TenebrimScenario setScreen={setScreen} notify={notify} stats={stats} setStats={setStats} diff={diff} exportSave={exportSave} />;
   }
 
-  if(screen==="devil_intro")return <div style={{minHeight:"100vh",background:"linear-gradient(160deg,#0a0a14,#0f0e1c)",padding:"2.5rem 1.5rem"}}><div style={{maxWidth:560,margin:"0 auto"}}>
-    <Tag color="#a8740c">Devil · Underworld</Tag>
-    <h2 style={{fontSize:22,fontWeight:700,color:"#e8c878",margin:"14px 0 10px"}}>Siphoning Station — Sector Three</h2>
-    <p style={{fontSize:14,lineHeight:1.9,color:"rgba(232,200,120,0.65)",marginBottom:32,whiteSpace:"pre-line"}}>The station smells of mineral heat. Mana concentrations are creeping past safe levels.{"\n\n"}You've never seen the surface.</p>
-    <Btn variant="amber" onClick={beginUnderworld}>Begin shift ↗</Btn>
-  </div></div>;
-  
+  if(screen==="devil_intro")return <Cinematic onDone={beginUnderworld} shots={[
+    {text:"The surface imagines the Underworld as a place of punishment and fire.",sub:"Mostly because their heroes brought those stories with them.",bg:"radial-gradient(ellipse at 50% 90%, #5a1a0a 0%, #0a0303 70%)",fx:["embers"],color:"#ffb08a",duration:5600},
+    {text:"The truth is simpler. Mana sinks, like cold air. Down here, it pools.",bg:"radial-gradient(ellipse at 50% 70%, #2a1250 0%, #06040e 70%)",fx:["motes","pulse"],color:"#c9b8ff",duration:5600},
+    {text:"Crystal light. Fungal forests that never saw the sun. Cities older than the Church.",sub:"And everywhere, through every wall, the hum of the siphons.",bg:"radial-gradient(ellipse at 30% 40%, #0e3a3a 0%, #040a0c 70%)",fx:["motes","fog"],color:"#a8f0e0",duration:6200},
+    {text:"Every Doomsday is born down here. Devils are the reason the surface gets any warning at all.",sub:"Most of them find the surface's opinion of them faintly absurd.",bg:"radial-gradient(ellipse at 50% 100%, #4a1030 0%, #08020a 70%)",fx:["embers","pulse"],color:"#ffb8d0",duration:6600},
+    {text:"Sector Three. Constaelous Ilvane's station. Your first shift as a Warden begins.",bg:"radial-gradient(circle at 50% 40%, #3a2a10 0%, #080604 70%)",fx:["motes"],color:"#e8c878",duration:5000},
+  ]}/>;
+
   if(screen==="devil_class") return (
     <div style={{minHeight: "100vh", fontFamily: "var(--font-sans)", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "2rem"}}>
       <PastoralBG />
@@ -1243,20 +1302,34 @@ if (screen === "devil_scenario") {
     <Btn variant="primary" onClick={beginGame}>Begin</Btn>
   </div></div>;}
 
-  if(screen==="siphon")return <div style={{minHeight:"100vh",background:"linear-gradient(160deg,#080810,#0d0c18)"}}><div style={{background:"rgba(0,0,0,0.5)",borderBottom:"1px solid rgba(255,255,255,0.07)",padding:"10px 16px",display:"flex",alignItems:"center",gap:14}}>
-    <span style={{fontWeight:700,fontSize:14,color:"#a89df0"}}>Siphoning</span>
-    <span style={{fontSize:12,marginLeft:"auto"}}>Time: {siphonTime}s</span>
-    <span style={{fontSize:12,color:"#e0a523"}}>Score: {siphonScore}</span>
-    {siphonActive&&<Btn small variant="ghost" onClick={leaveSiphon}>Leave</Btn>}
-  </div><div style={{maxWidth:600,margin:"0 auto",padding:18}}>
-    {!siphonResult?<><p style={{fontSize:12,color:"rgba(200,192,248,0.45)",marginBottom:18}}>Click nodes before they overflow.</p>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
-        {siphonNodes.map(n=>{const pct=Math.round(n.level);const col=n.level>80?"#e85c3a":n.level>55?"#e0a523":"#a89df0";return <div key={n.id} onClick={()=>tapNode(n.id)} style={{cursor:"pointer",padding:"18px 14px",borderRadius:12,border:`2px solid ${col}${n.danger?"":"55"}`,background:`${col}11`,textAlign:"center",animation:n.danger?"pulse 0.55s ease infinite alternate":undefined}}>
-          <div style={{height:90,display:"flex",alignItems:"flex-end",justifyContent:"center",marginBottom:10}}><div style={{width:32,borderRadius:"4px 4px 0 0",background:col,height:`${pct}%`,maxHeight:90,minHeight:4,boxShadow:`0 0 16px ${col}88`}}/></div>
-          <p style={{fontSize:13,fontWeight:700,color:col}}>{pct}%</p>
-        </div>;})}
-      </div></>:<Panel style={{marginTop:20}}><p style={{fontWeight:700,fontSize:16,color:"#c8c0f8",marginBottom:8}}>Shift complete</p><div style={{display:"flex",gap:10}}><Btn variant="primary" onClick={leaveSiphon}>Continue</Btn><Btn variant="ghost" onClick={startSiphon}>Run another</Btn></div></Panel>}
-  </div></div>;
+  if(screen==="siphon"){
+    const TYPE={stable:{c:"#a89df0",l:"Stable"},volatile:{c:"#ffb347",l:"Volatile · +15"},cracked:{c:"#e85c3a",l:"Cracked · overflow spawns a monster"}};
+    return <div style={{minHeight:"100vh",background:"radial-gradient(ellipse at 50% 100%,#2a1240 0%,#080810 70%)"}}>
+      <div className="combat-topbar" style={{borderBottomColor:"rgba(168,157,240,0.3)"}}>
+        <span style={{fontWeight:900,fontSize:13,color:"#a89df0",letterSpacing:"0.12em"}}>SIPHON SHIFT</span>
+        <span style={{fontSize:12,color:"rgba(255,255,255,0.6)"}}>Time {siphonTime}</span>
+        <span style={{fontSize:12,color:"#e0a523"}}>Score {siphonScore}</span>
+        {race?.id==="devil"&&devil.subtype==="veyrith"&&<Tag color="#ffd966">Intake: +2 MP per tap</Tag>}
+        {siphonActive&&<div style={{marginLeft:"auto"}}><Btn small variant="ghost" onClick={leaveSiphon}>Abandon shift</Btn></div>}
+      </div>
+      <div style={{maxWidth:680,margin:"0 auto",padding:18}}>
+        {!siphonResult?<><p style={{fontSize:12,color:"rgba(200,192,248,0.55)",marginBottom:18}}>Vent each node before it hits 100%. Volatile nodes rise fast but pay more. A cracked node that overflows lets the mana take shape.</p>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
+            {siphonNodes.map(n=>{const pct=Math.round(n.level);const T=TYPE[n.type]||TYPE.stable;const col=n.level>=100?"#555":n.level>80?"#e85c3a":n.level>55?"#e0a523":T.c;return <div key={n.id} onClick={()=>tapNode(n.id)} style={{cursor:n.level>=100?"not-allowed":"pointer",padding:"16px 12px",borderRadius:14,border:`2px solid ${col}${n.danger?"":"66"}`,background:`${col}12`,textAlign:"center",animation:n.danger&&n.level<100?"pulse 0.55s ease infinite alternate":undefined,userSelect:"none"}}>
+              <p style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",color:T.c,margin:"0 0 8px",textTransform:"uppercase"}}>{T.l}</p>
+              <div style={{height:90,display:"flex",alignItems:"flex-end",justifyContent:"center",marginBottom:10}}><div style={{width:34,borderRadius:"5px 5px 0 0",background:col,height:`${pct}%`,maxHeight:90,minHeight:4,boxShadow:`0 0 16px ${col}88`,transition:"height .5s"}}/></div>
+              <p style={{fontSize:13,fontWeight:800,color:col,margin:0}}>{n.level>=100?"OVERFLOW":`${pct}%`}</p>
+            </div>;})}
+          </div></>
+        :<Panel style={{marginTop:20}}>
+          <p style={{fontWeight:800,fontSize:17,color:siphonResult==="breach"?"#e85c3a":"#c8c0f8",marginBottom:8}}>{siphonResult==="breach"?"A cracked node blew — something is forming in the overflow!":"Shift complete"}</p>
+          <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+            {siphonResult==="breach"?<Btn variant="danger" onClick={()=>{setSiphonResult(null);startCombat(true);}}>Kill it before it grows</Btn>:<><Btn variant="primary" onClick={leaveSiphon}>Continue</Btn><Btn variant="ghost" onClick={startSiphon}>Run another</Btn></>}
+          </div>
+        </Panel>}
+      </div>
+    </div>;
+  }
 
   // ── Overworld + Underworld shared shell ───────────────────────────────
   const isOver=["overworld","shop","spells","skills","church","guild","sleep","craft","gamble", "training", "endgame", "tenebrim_survival"].includes(screen);
@@ -1267,7 +1340,7 @@ if (screen === "devil_scenario") {
     const housingOpt=SLEEP.find(o=>o.id===housing);
     
     const tabs=isUw ? [
-        {id:"map",label:"Map"},{id:"shop",label:"Shop"},{id:"spells",label:"Spells"},{id:"city",label:"City"},
+        {id:"map",label:"Sector Three"},{id:"shop",label:"Shop"},{id:"spells",label:"Spells"},
         ...(postDoomsday ? [{id:"overworld",label:"Surface ↗"}] : []) // NEW: Travel up
       ] : (
       race?.id === "tenebrim" ? [
@@ -1317,7 +1390,7 @@ if (screen === "devil_scenario") {
           <span>Day {day}</span>
           {/* NY LOGIK: Visa fysisk nivå om rasen saknar magi */}
           {!race?.canSpell && physicalLevel > 0 && <Tag color="#e0a523">Phys Lvl {physicalLevel}</Tag>}
-          {isUw&&<Tag color="#e0a523">Rep {devilRep}/8</Tag>}
+          {isUw&&<Tag color="#e0a523">{rankOf(devilRep).title} · Rep {devilRep}</Tag>}
           {!isUw&&<><span>{xp} XP</span>{cls?.id==="adventurer"&&hasBadge&&<Tag color="#e0a523">{RANKS[advRankIdx]}</Tag>}{cls?.id==="hunter"&&<Tag color="#7c6fd4">★{hunterStars} Hunter</Tag>}</>}
           <Btn small variant="ghost" data-testid="overworld-save-btn" onClick={exportSave}>Save Game</Btn>
           <Btn small variant="ghost" data-testid="overworld-menu-btn" onClick={returnToMenu}>☰ Menu</Btn>
@@ -1347,20 +1420,11 @@ if (screen === "devil_scenario") {
       </div>
       <div style={{padding:"16px",maxWidth:780,margin:"0 auto"}}>
         {/* Underworld map tab */}
-        {isUw&&tab==="map"&&<div>
-          {nobleInvite&&<Panel style={{marginBottom:14,borderColor:"rgba(232,185,56,0.5)",background:"linear-gradient(180deg,rgba(232,185,56,0.12),rgba(232,185,56,0.02))"}}>
-            <p style={{fontWeight:700,fontSize:14,color:"#e8c878",marginBottom:6}}>A noble's invitation</p>
-            <p style={{fontSize:12,color:"rgba(232,200,120,0.65)",lineHeight:1.65,marginBottom:14}}>A surface noble has heard of your work. Permanent move.</p>
-            <div style={{display:"flex",gap:8}}><Btn variant="amber" onClick={acceptInvite}>Accept ↗</Btn><Btn variant="ghost" onClick={declineInvite}>Decline</Btn></div>
-          </Panel>}
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(155px,1fr))",gap:10}}>
-            <Panel onClick={startSiphon}><p style={{fontWeight:600,fontSize:13,color:"#a89df0",marginBottom:4}}>Siphoning</p><p style={{fontSize:11,color:"rgba(200,192,248,0.5)",marginBottom:8}}>Manage mana nodes.</p><Btn small variant="primary" onClick={startSiphon}>Start ↗</Btn></Panel>
-            <Panel onClick={()=>startCombat(true)}><p style={{fontWeight:600,fontSize:13,color:"#e85c3a",marginBottom:4}}>Hunt monsters</p><p style={{fontSize:11,color:"rgba(200,192,248,0.5)",marginBottom:8}}>{declinedInvite?"Threats heavier.":"Cull threats."}</p><Btn small variant="danger" onClick={()=>startCombat(true)}>Hunt ↗</Btn></Panel>
-            <Panel><p style={{fontWeight:600,fontSize:13,color:"#3ec995",marginBottom:4}}>Sleep</p><p style={{fontSize:11,color:"rgba(200,192,248,0.5)",marginBottom:8}}>Rest in your quarters.</p><Btn small variant="success" onClick={()=>{const opt=SLEEP[1];setStats(s=>({...s,hp:Math.min(s.maxHp,s.hp+Math.round(s.maxHp*opt.hpRec)),mp:Math.min(s.maxMp,s.mp+Math.round(s.maxMp*opt.mpRec)),stamina:Math.min(s.maxStamina,s.stamina+Math.round(s.maxStamina*opt.staRec))}));setSpellStudiedToday({});setDay(d=>d+1);if(!postDoomsday)setDoomsday(d=>Math.min(10,d+0.25)); if(window.SFX && window.SFX.sleep) window.SFX.sleep();}}>Sleep</Btn></Panel>
-          </div>
-          {potions.length>0&&<Panel style={{marginTop:10}}><p style={{fontSize:11,color:"rgba(200,192,248,0.4)",marginBottom:8}}>Potions</p><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{getStacks().map(p=><Btn key={p.id} small variant="success" onClick={()=>usePotion(p)}>{p.name} x{p.count}</Btn>)}</div></Panel>}
-          {log.length>0&&<div ref={logRef} style={{maxHeight:130,overflowY:"auto",padding:"10px 14px",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,fontSize:12,lineHeight:1.8,marginTop:10,background:"rgba(0,0,0,0.25)"}}>{log.map(l=><div key={l.id} style={{color:LOG_C[l.type]||"#ccc"}}>{l.msg}</div>)}</div>}
-        </div>}
+        {isUw&&tab==="map"&&<DevilScenario devil={devil} setDevil={setDevil} day={day} bronze={bronze} setBronze={setBronze} stats={stats} setStats={setStats}
+          devilRep={devilRep} setDevilRep={setDevilRep} doomsday={doomsday} setDoomsday={setDoomsday} postDoomsday={postDoomsday}
+          nobleInvite={nobleInvite} acceptInvite={acceptInvite} declineInvite={declineInvite} declinedInvite={declinedInvite}
+          startSiphon={startSiphon} startPatrol={()=>startCombat(true)} startDeepPatrol={startDeepPatrol} onSleep={uwSleep}
+          notify={notify} addLog={addLog} log={log} LOG_C={LOG_C} potions={getStacks()} usePotion={usePotion} setSpells={setSpells}/>}
 
         {/* Overworld map */}
         {screen==="overworld"&&<div>
@@ -1388,7 +1452,6 @@ if (screen === "devil_scenario") {
         {screen==="sleep"&&<SleepView housing={housing} chooseHousing={chooseHousing} bronze={bronze} ownsHouse={ownsHouse} buyHouse={buyHouse}/>}
         {screen==="craft"&&<CraftView bronze={bronze} setBronze={setBronze} craftMats={craftMats} setCraftMats={setCraftMats} setOwnedWeapons={setOwnedWeapons} setOwnedArmors={setOwnedArmors} setPotions={setPotions} notify={notify} setCraftedShop={setCraftedShop}/>}
         {screen==="gamble"&&<GambleView bronze={bronze} setBronze={setBronze} notify={notify} setTotalEarned={setTotalEarned}/>}
-        {isUw&&tab==="city"&&<CityView bronze={bronze} setBronze={setBronze} cityLevel={cityLevel} setCityLevel={setCityLevel} setStats={setStats} notify={notify}/>}
         {/* Nya vyer anropas här */}
         {screen==="training"&&<TrainingView physicalLevel={physicalLevel} setPhysicalLevel={setPhysicalLevel} setScreen={setScreen} notify={notify} race={race} />}
         {screen==="endgame"&&<EndgameView race={race} bronze={bronze} setBronze={setBronze} stats={stats} setStats={setStats} notify={notify} onEnterArena={startColosseum} expeditions={expeditions} setExpeditions={setExpeditions} guildUpgrades={guildUpgrades} setGuildUpgrades={setGuildUpgrades} />}
@@ -1405,6 +1468,7 @@ if (screen === "devil_scenario") {
       <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}}>{combatSummary.lines.map((l,k)=><span key={k} className="pill" style={{color:"#e0d8ff",borderColor:"rgba(255,255,255,0.18)",background:"rgba(255,255,255,0.05)"}}>{l}</span>)}</div>
       <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
         {!isDoom&&combatResult==="win"&&<Btn variant="success" onClick={()=>{setScreen(combatOrigin);setTab("map");}}>Return</Btn>}
+        {!isDoom&&combatResult==="win"&&combatSummary.absorb&&<Btn variant="primary" onClick={()=>{setDevil(d=>({...d,absorbed:d.absorbed+1,instability:d.instability+12}));setCombatSummary(cs=>({...cs,absorb:false,lines:[...cs.lines,"Core absorbed: +1 ATK, +12 instability"]}));SFX.spell();}}>Absorb a core (+1 ATK, +12 instability)</Btn>}
         {!isDoom&&combatResult==="lose"&&<Btn variant="danger" onClick={respawn}>{diff?.perma?"Return to menu":"Wake up (-10% Bronze)"}</Btn>}
         {isDoom&&combatResult==="win"&&<>
           <Btn variant={combat.wave>=4?"gold":"danger"} onClick={()=>{if(combat.wave>=4)startLumenari();else startEndgame(combat.wave+1);}}>{combat.wave>=4?"Look up ↗":`Hold the line — wave ${combat.wave+2}`}</Btn>
@@ -1415,7 +1479,7 @@ if (screen === "devil_scenario") {
       </div>
     </div>;
     return <CombatScreen key={combat.key} initialEnemies={combat.enemies} player={battlePlayer()} ctx={combatCtx()} actions={combatActions()}
-      potions={getStacks()} onConsumePotion={consumePotion} allies={isDoom?allies:0}
+      potions={getStacks()} onConsumePotion={consumePotion} allies={(isDoom?allies:0)+companionAllies()}
       title={isDoom?`DOOMSDAY · WAVE ${combat.wave+1}/5`:"CONTRACT"} subtitle={isDoom?"The horde climbs from below.":undefined}
       background={isDoom?"radial-gradient(ellipse at top,#3a0c0c 0%,#120404 70%)":undefined}
       canFlee={!isDoom} onFlee={flee} onEnd={handleCombatEnd} resultContent={resultContent}

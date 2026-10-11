@@ -190,52 +190,6 @@ export function SleepView({ housing, chooseHousing, bronze, ownsHouse, buyHouse 
   </div>;
 }
 
-export function CityView({ bronze, setBronze, cityLevel, setCityLevel, setStats, notify }) {
-  // Defaults for new fields (preserve existing saves)
-  const armory = cityLevel.armory || 0;
-  const sanctum = cityLevel.sanctum || 0;
-  const market = cityLevel.market || 0;
-  const forge = cityLevel.forge || 0;
-  
-  const upgrades = [
-    { key: "pump", name: "Mana Pump", color: "#a89df0", desc: "+5 Max MP per level", lvl: cityLevel.pump, cost: 500 + cityLevel.pump * 250, stat: "maxMp", val: 5, sound: "buy" },
-    { key: "walls", name: "Obsidian Walls", color: "#e85c3a", desc: "+5 Max HP per level", lvl: cityLevel.walls, cost: 500 + cityLevel.walls * 250, stat: "maxHp", val: 5, sound: "buy" },
-    { key: "armory", name: "Inner Armory", color: "#ffd966", desc: "+3 Max Stamina, +1 ATK per level", lvl: armory, cost: 700 + armory * 350, stat: "maxStamina", val: 3, sound: "buy" },
-    { key: "sanctum", name: "Devil Sanctum", color: "#c44d4d", desc: "+8 Max MP per level (devil potency)", lvl: sanctum, cost: 900 + sanctum * 400, stat: "maxMp", val: 8, sound: "spell" },
-    { key: "market", name: "Black Market", color: "#3ec995", desc: "Generates 50 B passive each visit", lvl: market, cost: 600 + market * 300, stat: null, val: 0, sound: "buy" },
-    { key: "forge", name: "Hellforge", color: "#ff8c00", desc: "+2 Max HP & +2 Max Stamina per level", lvl: forge, cost: 800 + forge * 400, stat: null, val: 0, sound: "buy" },
-  ];
-  
-  return <div>
-    <h2 style={{ fontSize: 18, fontWeight: 700, color: "#e8c878", marginBottom: 6 }}>Underworld City Builder</h2>
-    <p style={{ fontSize: 12, color: "rgba(232,200,120,0.65)", marginBottom: 20 }}>Rebuild the sector. Upgrades give permanent stat boosts. Costs scale with each level.</p>
-    
-    {market > 0 && <Panel style={{ marginBottom: 14, borderColor: "rgba(62,201,149,0.4)", background: "rgba(62,201,149,0.06)" }}>
-      <Btn small variant="success" onClick={() => { setBronze(b => b + market * 50); notify(`Black Market trickle: +${market * 50} B`, "#3ec995"); if(window.SFX) window.SFX.buy(); }}>Collect Market Profits (+{market * 50} B)</Btn>
-    </Panel>}
-    
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-      {upgrades.map(u => (
-        <Panel key={u.key} style={{ borderColor: `${u.color}40` }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-            <p style={{ fontWeight: 700, fontSize: 14, color: u.color }}>{u.name} <span style={{ fontSize: 11, opacity: 0.6 }}>Lv {u.lvl}</span></p>
-          </div>
-          <p style={{ fontSize: 11, color: "rgba(200,192,248,0.55)", marginBottom: 8, minHeight: 28 }}>{u.desc}</p>
-          <Btn small variant="primary" disabled={bronze < u.cost} onClick={() => {
-            setBronze(b => b - u.cost);
-            setCityLevel(c => ({ ...c, [u.key]: (c[u.key] || 0) + 1 }));
-            if (u.stat && u.val) setStats(s => ({ ...s, [u.stat]: s[u.stat] + u.val }));
-            if (u.key === "forge") setStats(s => ({ ...s, maxHp: s.maxHp + 2, maxStamina: s.maxStamina + 2 }));
-            if (u.key === "armory") setStats(s => ({ ...s, maxStamina: s.maxStamina + 3 }));
-            notify(`${u.name} upgraded!`, u.color);
-            if (window.SFX && window.SFX[u.sound]) window.SFX[u.sound]();
-          }}>Upgrade ({u.cost} B)</Btn>
-        </Panel>
-      ))}
-    </div>
-  </div>;
-}
-
 export function CraftView({ bronze, setBronze, craftMats, setCraftMats, setOwnedWeapons, setOwnedArmors, setPotions, notify, setCraftedShop }) {
   const [category, setCategory] = useState("weapons"); // weapons, armor, potions
   const [mini, setMini] = useState(null);
