@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Btn, Tag, Bar, Confetti } from "./UIComponents";
+import { asset } from "./assets";
 
 export default function ElfScenario({ setScreen, notify, stats, setStats, diff }) {
   const playClick = () => { if (window.SFX && window.SFX.click) window.SFX.click(); };
@@ -1635,7 +1636,7 @@ return (
                 <div style={{ color: "#ffd966", fontSize: 13, letterSpacing: "3px", marginBottom: 14, borderBottom: "1px solid rgba(255,217,102,0.35)", paddingBottom: 6, display: "flex", alignItems: "center", gap: 8 }}><span>⚡</span> NEW BOOSTS UNLOCKED</div>
                 {researchAnnounce.boosts.map((boost, index) => (
                   <div key={index} style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 11, background: "rgba(0,0,0,0.35)", padding: "11px 16px", borderRadius: 10, border: "1px solid rgba(62,201,149,0.25)" }}>
-                    {boost.icon && <img src={boost.icon} alt={boost.label} style={{ width: 54, height: 54, borderRadius: 8, objectFit: "cover", boxShadow: "0 0 18px rgba(62,201,149,0.6)", flexShrink: 0 }} />}
+                    {boost.icon && <img src={asset("img/" + boost.icon)} alt={boost.label} style={{ width: 54, height: 54, borderRadius: 8, objectFit: "cover", boxShadow: "0 0 18px rgba(62,201,149,0.6)", flexShrink: 0 }} />}
                     <div style={{ flex: 1 }}><div style={{ color: "#3ec995", fontWeight: 700, fontSize: 15.5, marginBottom: 2 }}>{boost.label}</div><div style={{ color: "#a8d9ff", fontSize: 13.5, lineHeight: 1.35 }}>{boost.change}</div></div>
                   </div>
                 ))}

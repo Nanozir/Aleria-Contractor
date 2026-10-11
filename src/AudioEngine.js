@@ -1,4 +1,5 @@
 // AudioEngine.js
+import { asset } from "./assets";
 
 // 1. Global Volume State
 export let VOLUMES = { master: 1.0, bgm: 0.6, sfx: 1.0 };
@@ -188,7 +189,7 @@ let currentBGM = null;
 let currentTrackUrl = null; 
 
 export function playMenuBGM() {
-    playTrack("/audio/menu_bgm.mp3"); 
+    playTrack(asset("audio/menu_bgm.mp3")); 
 }
 
 export function playTrack(trackUrl) {
@@ -216,9 +217,9 @@ export function stopBGM() {
 
 export function playRaceBGM(raceId) {
     const raceTracks = {
-        equar: "/audio/equar_bgm.mp3",
-        tenebrim: "/audio/tenebrim_bgm.mp3",
-        elf: "/audio/elf_bgm.mp3" // <-- Lägg till ett dedikerat spår för alverna här
+        equar: asset("audio/equar_bgm.mp3"),
+        tenebrim: asset("audio/tenebrim_bgm.mp3"),
+        elf: asset("audio/elf_bgm.mp3") // <-- Lägg till ett dedikerat spår för alverna här
     };
     if (raceTracks[raceId]) {
         playTrack(raceTracks[raceId]);
@@ -228,5 +229,5 @@ export function playRaceBGM(raceId) {
 }
 
 export function playCombatBGM() {
-    playTrack("/audio/combat_bgm.mp3"); 
+    playTrack(asset("audio/combat_bgm.mp3")); 
 }
