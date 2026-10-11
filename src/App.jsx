@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
 
 import ElfScenario from "./ElfScenario";
+import CombatScreen from "./combat/CombatScreen";
+import LumenariFight from "./combat/LumenariFight";
+import { makeEnemy } from "./combat/engine";
+import Cinematic from "./cinematic/Cinematic";
 import DevilScenario from "./DevilScenario";
 import EquarScenario from "./EquarScenario";
 import TenebrimScenario from "./TenebrimScenario";
@@ -11,9 +15,9 @@ import { SFX, stopBoss, playWaves, playLumen, playMenuBGM, playCombatBGM, stopBG
 // ── 2. Importera Speldata ──────────────────────────────────────────────────
 import { 
   RACES, ORIGINS, CLASSES, RANKS, RANK_THRESHOLDS, RANK_MULT, GRACE, 
-  DIFFS, MONSTERS, UW_MONSTERS, M_ACT, SURFACE_SPELLS, DEVIL_SPELLS, 
+  DIFFS, MONSTERS, UW_MONSTERS, SURFACE_SPELLS, DEVIL_SPELLS, 
   WEAPONS, ARMORS, POTIONS, TOOLS, SKILLS, SLEEP, HOUSE_PRICE, 
-  ATTACKS_BY_RACE, LOG_C 
+  ATTACKS_BY_RACE, TACTICS, LOG_C 
 } from "./GameData";
 
 // ── 3. Importera UI-komponenter ────────────────────────────────────────────
@@ -24,8 +28,7 @@ import {
 // ── 4. Importera Vyerna (Sub-skärmar) ──────────────────────────────────────
 import { 
   ShopView, SpellsView, SkillsView, ChurchView, GuildView, 
-  SleepView, CityView, CraftView, GambleView, TrainingView, EndgameView,
-  TenebrimSurvivalView
+  SleepView, CityView, CraftView, GambleView, TrainingView, EndgameView
 } from "./Views";
 
 // ── Progress Save System ───────────────────────────────────────────────────
@@ -54,12 +57,9 @@ export default function App(){
   const [myTools,setMyTools]=useState([]);
   const [potions,setPotions]=useState([]);
   const [log,setLog]=useState([]);
-  const [combat,setCombat]=useState(null);
-  const [combatPhase,setCombatPhase]=useState("player");
-  const [activeEnemyIdx,setActiveEnemyIdx]=useState(0);
-  const [guardActive,setGuardActive]=useState(false);
-  const [enemyStunned,setEnemyStunned]=useState({});
+  const [combat,setCombat]=useState(null); // { enemies, mode: "normal"|"doomsday", wave, key }
   const [combatResult,setCombatResult]=useState(null);
+  const [combatSummary,setCombatSummary]=useState(null);
   const [combatOrigin,setCombatOrigin]=useState("overworld");
   const [nearDeathWins,setNearDeathWins]=useState(0);
   const [totalKills,setTotalKills]=useState(0);
@@ -69,16 +69,8 @@ export default function App(){
   const [spells,setSpells]=useState(SURFACE_SPELLS.map(s=>({...s})));
   const [spellStudiedToday,setSpellStudiedToday]=useState({});
   const [doomsday,setDoomsday]=useState(1);
-// ── Tenebrim Survival System ───────────────────────────────────────────────
-  const [food, setFood] = useState(100);
-  const [energy, setEnergy] = useState(100);
-  const [survivalStats, setSurvivalStats] = useState({ hunting: 1, gathering: 1, crafting: 1 });
+  // Legacy survival inventory (only used by the debug "give" cheats)
   const [survivalInv, setSurvivalInv] = useState({ meat: 0, herbs: 0, junk: 0, parts: 0 });
-  
-  // Liberation Quest States
-  const [locationsExplored, setLocationsExplored] = useState(0);
-  const [liberationQuest, setLiberationQuest] = useState("idle"); // idle, active, locked, completed
-  const [tenebrimAllies, setTenebrimAllies] = useState(0);
 
   const [day,setDay]=useState(1);
   const [doomsdaysCleared,setDoomsdaysCleared]=useState(0);
@@ -104,7 +96,6 @@ export default function App(){
   const [ownsHouse,setOwnsHouse]=useState(false);
   const [physicalLevel,setPhysicalLevel]=useState(0);
   const [endgameWave,setEndgameWave]=useState(0);
-  const [endgameMonsters,setEndgameMonsters]=useState([]);
   const [allies,setAllies]=useState(0);
   // NY LOGIK: Globalt minne för Mercenaries och Guild Upgrades
   const [expeditions, setExpeditions] = useState([]);
@@ -114,14 +105,8 @@ export default function App(){
   const [colQte, setColQte] = useState(null); // För arena-specifika QTEs
   
   // Lumenari
-  const [lumenari,setLumenari]=useState(null);
   const [lumenariPhase,setLumenariPhase]=useState(1);
-  const [lumenCombatPhase,setLumenCombatPhase]=useState("player");
-  const [qteActive,setQteActive]=useState(false);
-  const [qteSequence,setQteSequence]=useState([]);
-  const [qteIdx,setQteIdx]=useState(0);
-  const [golems,setGolems]=useState([]);
-  const [lumenQteTime, setLumenQteTime] = useState(100);
+  const [lumenKey,setLumenKey]=useState(0);
   
   // Underworld Minigames
   const [siphonNodes,setSiphonNodes]=useState([]);
@@ -174,8 +159,8 @@ export default function App(){
   // Audio Router: Triggers BGM depending on current screen
   // Audio Router: Triggers BGM depending on current screen
   useEffect(()=>{
-    if(screen==="endgame_combat") { stopBGM(); playWaves(); }
-    else if(screen==="lumenari") { stopBGM(); playLumen(lumenariPhase); }
+    if(screen==="lumenari") { stopBGM(); playLumen(lumenariPhase); }
+    else if(["lumenari_intro","lumenari_outro","lumenari_lost"].includes(screen)) { stopBGM(); stopBoss(); }
     else if(["main_menu", "difficulty", "race", "origin", "class", "intro", "intro_ten", "devil_intro", "devil_class", "ten_slave", "ten_tribe"].includes(screen)) { 
       stopBoss(); 
       playMenuBGM(); 
@@ -244,6 +229,10 @@ export default function App(){
           addLog("Time shatters. You reached the New Dawn.", "sys");
           matched = true;
         }
+
+        // Cheat: trigger the Doomsday / jump straight to the Lumenari (for testing)
+        if (code.endsWith("doomsdaynow")) { setDoomsday(10); notify("Debug: Doomsday triggered", "#e85c3a"); matched = true; }
+        if (code.endsWith("lumenarinow")) { startLumenari(); notify("Debug: Lumenari", "#ffd966"); matched = true; }
 
         // Cheat 2: Scalable Material & Money Cheats
         // Base words we are listening for
@@ -384,16 +373,15 @@ export default function App(){
     setXp(0); setBronze(80); setTotalEarned(0);
     setWeapon(WEAPONS[0]); setWeapon2(WEAPONS[0]); setArmor(ARMORS[0]);
     setOwnedWeapons(["fists"]); setOwnedArmors(["none"]); setMyTools([]); setPotions([]);
-    setLog([]); setCombat(null); setCombatPhase("player"); setCombatResult(null);
-    setActiveEnemyIdx(0); setGuardActive(false); setEnemyStunned({});
+    setLog([]); setCombat(null); setCombatResult(null); setCombatSummary(null);
     setNearDeathWins(0); setTotalKills(0); setTechniqueUnlocked(false);
     setUnlockedSkills([]); setRevealedSkills([]); setSpells(SURFACE_SPELLS.map(s=>({...s})));
     setSpellStudiedToday({}); setDoomsday(1); setDay(1); setPostDoomsday(false);
     setDaysSinceContract(0); setAdvRankIdx(0); setHasBadge(true); setHunterStars(1);
     setDevilRep(0); setNobleInvite(false); setLeftUnderworld(false); setDeclinedInvite(false);
     setNobleQuestActive(false); setHousing("inn"); setOwnsHouse(false); setPhysicalLevel(0);
-    setEndgameWave(0); setEndgameMonsters([]); setAllies(0);
-    setLumenari(null); setLumenariPhase(1); setLumenCombatPhase("player"); setQteActive(false); setQteSequence([]); setQteIdx(0); setGolems([]);
+    setEndgameWave(0); setAllies(0);
+    setLumenariPhase(1); setDoomsdayTriggered(false);
     setSiphonNodes([]); setSiphonScore(0); setSiphonActive(false); setSiphonTime(30); setSiphonResult(null);
     setSlaveTask(null); setSlaveProgress(0); setSlaveDay(0); setEscapeReady(false);
     setCraftMats({metal:0,herb:0}); setCityLevel({pump:0,walls:0}); setCraftedShop([]);
@@ -423,7 +411,7 @@ export default function App(){
   function shopDiscount(){return getSkill("shop_discount");}
   function adjustedPrice(p){return Math.round(p*(1-shopDiscount()));}
 
-  useEffect(()=>{if(doomsday>=10&&!doomsdayTriggered&&!postDoomsday){setDoomsdayTriggered(true);setShowCutscene(true);SFX.roar();setTimeout(()=>{setShowCutscene(false);startEndgame(0);},4500);}},[doomsday,doomsdayTriggered,postDoomsday]);
+  useEffect(()=>{if(doomsday>=10&&!doomsdayTriggered&&!postDoomsday){setDoomsdayTriggered(true);setShowCutscene(true);}},[doomsday,doomsdayTriggered,postDoomsday]);
   useEffect(()=>{if(race?.id==="devil"&&devilRep>=8&&!nobleInvite&&!leftUnderworld&&!declinedInvite){setNobleInvite(true);notify("A noble has heard of your reputation.","#c8911a");}},[devilRep,race,nobleInvite,leftUnderworld,declinedInvite]);
 
   function pickDiff(d){
@@ -574,190 +562,71 @@ export default function App(){
   function getBonusDef(){return (armor?.def||0)+(race?.defBonus||0)+getSkill("passive_def")+(race?.id==="tetrabrachian"&&weapon2?.id!=="fists"?-3:0);}
   function rollDodge(){return Math.random()*100<((race?.dodge||5)+getSkill("passive_dodge"));}
 
-function startSlaverCombat(isBoss) {
-    setCombatOrigin(screen);
-    const slaverNames = ["Syndicate Scout", "Camp Guard", "Mercenary Thug", "Slave Driver"];
-    const num = isBoss ? 1 : (diff?.enemies || 2);
-    
-    const enemies = Array.from({length:num}, (_, i) => {
-      const name = isBoss ? "Syndicate Leader" : slaverNames[Math.floor(Math.random() * slaverNames.length)];
-      // Scale human enemies based on how far into the quest you are
-      const hpScale = isBoss ? 500 : 80 + (tenebrimAllies * 15);
-      const atkScale = isBoss ? 35 : 12 + (tenebrimAllies * 2);
-      
-      return {
-        id: "slaver_" + i + "_" + Date.now(),
-        name: name,
-        star: isBoss ? 5 : 3,
-        hp: hpScale, maxHp: hpScale, atk: atkScale, def: isBoss ? 15 : 5,
-        reward: { xp: isBoss ? 600 : 50, bronze: isBoss ? 1500 : 40 }
-      };
-    });
-    
-    setCombat(enemies); setActiveEnemyIdx(0); setGuardActive(false); setEnemyStunned({});
-    setCombatPhase("player"); setCombatResult(null);
-    setLog([{msg: `${enemies.length} hostile humans engage you!`, type:"sys", id:Date.now()}]);
-    setScreen("combat");
+  // ── Combat (engine in combat/engine.js, UI in combat/CombatScreen.jsx) ──
+  function combatCtx(){return{atk:getBonusAtk(),def:getBonusDef(),dodge:(race?.dodge||5)+getSkill("passive_dodge"),crit:0.08+(race?.id==="equar"?0.05:0),strikeBonus:getSkill("strike_bonus")};}
+  function combatActions(){
+    const learned=visibleSpells().filter(s=>s.learned&&s.combatUse);
+    const ra=ATTACKS_BY_RACE[race?.id]||ATTACKS_BY_RACE.human;
+    const spellActs=race?.canSpell?learned.map(s=>({id:s.id,name:s.combatUse.label,dmg:s.combatUse.dmg,mpCost:s.combatUse.mpCost,desc:s.combatUse.desc||"Spell.",isSpell:true,effect:s.combatUse.effect,turns:s.combatUse.turns,aoe:s.combatUse.aoe,poise:s.combatUse.poise})):[];
+    return [...ra,...spellActs,...TACTICS];
   }
+  function consumePotion(id){setPotions(prev=>{const i=prev.findIndex(x=>x.id===id);if(i<0)return prev;const n=[...prev];n.splice(i,1);return n;});}
+  function battlePlayer(){return{hp:stats.hp,maxHp:stats.maxHp,mp:race?.canSpell?stats.mp:0,maxMp:race?.canSpell?stats.maxMp:0,stamina:stats.stamina,maxStamina:stats.maxStamina};}
 
   function startCombat(isUw){
-    setCombatOrigin(screen); // Dynamically saves your current screen
-    let pool=isUw?UW_MONSTERS:(()=>{const dd=doomsday;const ms=postDoomsday?5:dd<3?2:dd<6?3:dd<8?4:5;return MONSTERS.filter(m=>m.star<=ms);})();
+    setCombatOrigin(screen);
     const dd=postDoomsday?5:doomsday;
+    const ms=postDoomsday?5:dd<3?2:dd<6?3:dd<8?4:5;
+    const pool=isUw?UW_MONSTERS.filter(m=>m.star<=Math.max(3,ms)):MONSTERS.filter(m=>m.star<=ms&&m.star>=Math.max(1,ms-2));
     const num=diff?.enemies||2;
-    const enemies=Array.from({length:num},(_,i)=>{
+    const enemies=Array.from({length:num},()=>{
       const b=pool[Math.floor(Math.random()*pool.length)];
-      const hpScale=(isUw?1.4:1)+dd*0.08+(declinedInvite?0.3:0);
+      const hpScale=((isUw?1.4:1)+dd*0.08+(declinedInvite?0.3:0))*(diff?.hpMult||1);
       const atkScale=((isUw?1.3:1)+dd*0.06+(declinedInvite?0.25:0))*(diff?.enemyAtk||1);
-      const hpMult=diff?.hpMult||1;
-      return{...b,id:b.id+"_"+i+"_"+Date.now(),hp:Math.round(b.hp*hpScale*hpMult),maxHp:Math.round(b.hp*hpScale*hpMult),atk:Math.round(b.atk*atkScale),def:b.def};
+      return makeEnemy(b,{hp:hpScale,atk:atkScale});
     });
     const highStar=Math.max(...enemies.map(e=>e.star));
     const pp=getBonusAtk()+getBonusDef();const thr=pp>=40?4:pp>=25?3:2;
     if(highStar>thr){const wm=enemies.find(e=>e.star===highStar);setWarnMonster(wm);setWarnVisible(true);SFX.warn();setTimeout(()=>{setWarnVisible(false);setTimeout(()=>launchCombat(enemies),350);},2500);}
     else launchCombat(enemies);
   }
-  function launchCombat(enemies){
-    setCombat(enemies);setActiveEnemyIdx(0);setGuardActive(false);setEnemyStunned({});
-    setCombatPhase("player");setCombatResult(null);
-    setLog([{msg:`${enemies.length} ${enemies.length===1?"enemy appears":"enemies appear"}!`,type:"sys",id:Date.now()}]);
-    setScreen("combat");setDaysSinceContract(0);
-    if(race?.id==="devil"&&!leftUnderworld)setDevilRep(r=>r+1);
+  function launchCombat(enemies,opts={}){
+    setCombat({enemies,mode:opts.mode||"normal",wave:opts.wave||0,key:Date.now()});
+    setCombatResult(null);setCombatSummary(null);
+    setScreen("combat");
+    if((opts.mode||"normal")==="normal"){setDaysSinceContract(0);if(race?.id==="devil"&&!leftUnderworld)setDevilRep(r=>r+1);}
   }
   function flee(){SFX.flee();const cost=Math.ceil(bronze*0.05);setBronze(b=>Math.max(0,b-cost));addLog(`Fled. Lost ${cost} Bronze.`,"sys");setScreen(combatOrigin);setTab("map");setCombatResult(null);setCombat(null);}
 
-  // FIX: Hanterar både vanliga och Multi-attacks (AoE)
-  function playerAct(action){
-    if(combatPhase!=="player")return;
-    let ns={...stats};let newGuard=false;
-    if(action.staminaCost&&ns.stamina<action.staminaCost){notify("Not enough stamina.","#b83a2a");return;}
-    if(action.mpCost&&ns.mp<action.mpCost){notify("Not enough mana.","#b83a2a");return;}
-    
-    let nc=[...combat];
-    const tIdx=activeEnemyIdx<nc.length&&nc[activeEnemyIdx].hp>0?activeEnemyIdx:nc.findIndex(e=>e.hp>0);
-    if(tIdx<0)return;
-    const target=nc[tIdx];
-    
-    if(action.id==="guard"){newGuard=true;SFX.guard();addLog("You brace.","info");}
-    else if(action.id==="focus"){ns.stamina=Math.min(ns.maxStamina,ns.stamina+15);addLog("Stamina restored.","heal");}
-    else if(action.effect==="confuse"||action.effect==="stun"){ns.mp-=action.mpCost;SFX.spell();setEnemyStunned(p=>({...p,[target.id]:action.turns||1}));addLog(`${action.name}: ${target.name} stunned.`,"spell");}
-    else{
-      if(action.accuracy&&Math.random()>action.accuracy){addLog(`${action.name} missed!`,"info");if(action.staminaCost)ns.stamina-=action.staminaCost;}
-      else{
-        if (action.aoe) {
-          let totalDmg = 0;
-          for (let i = 0; i < nc.length; i++) {
-            if (nc[i].hp <= 0) continue;
-            const raw = action.dmg ? Math.floor(Math.random() * (action.dmg[1] - action.dmg[0] + 1)) + action.dmg[0] : 10;
-            let bonus = getBonusAtk();
-            const dmg = Math.max(1, raw + bonus - nc[i].def);
-            totalDmg += dmg;
-            nc[i].hp = Math.max(0, nc[i].hp - dmg);
-          }
-          if (action.staminaCost) ns.stamina -= action.staminaCost;
-          if (action.mpCost) ns.mp -= action.mpCost;
-          SFX.attack();
-          addLog(`${action.name} hit all enemies for ${totalDmg} total damage!`, "dmg");
-        } 
-        else {
-          const hits=action.hits||1;let totalDmg=0;
-          for(let h=0;h<hits;h++){
-            const raw=action.dmg?Math.floor(Math.random()*(action.dmg[1]-action.dmg[0]+1))+action.dmg[0]:Math.floor(Math.random()*10)+6;
-            let bonus=getBonusAtk();
-            if(action.id==="strike")bonus+=getSkill("strike_bonus");
-            const dmg=Math.max(1,raw+bonus-target.def);
-            totalDmg+=dmg;target.hp=Math.max(0,target.hp-dmg);if(target.hp<=0)break;
-          }
-          if(action.staminaCost)ns.stamina-=action.staminaCost;if(action.mpCost)ns.mp-=action.mpCost;
-          SFX.attack();addLog(`${action.name} → ${target.name}: ${totalDmg} damage.`,"dmg");
-          if(action.effect==="stun"){setEnemyStunned(p=>({...p,[target.id]:1}));}
-
-          // Tenebrim Weapon Durability Check
-          if (action.id === "spear_thrust" && Math.random() < 0.20) {
-             setSurvivalInv(i => ({...i, huntingGear: Math.max(0, (i.huntingGear||1) - 1)}));
-             addLog("Your Spear shattered!", "sys");
-          } else if (action.id === "heavy_spear" && Math.random() < 0.10) {
-             setSurvivalInv(i => ({...i, heavySpear: Math.max(0, (i.heavySpear||1) - 1)}));
-             addLog("Your Heavy Spear broke!", "sys");
-          }
-        }
-      }
+  function handleCombatEnd(result,battle){
+    const fp=battle.player;
+    setStats(s=>({...s,hp:Math.max(0,Math.round(fp.hp)),mp:race?.canSpell?Math.round(fp.mp):s.mp,stamina:Math.round(fp.stamina)}));
+    setCombatResult(result);
+    if(combat?.mode==="doomsday"){
+      setAllies(battle.allies);
+      setCombatSummary(result==="win"?{title:`Wave ${combat.wave+1} of 5 holds.`,lines:[combat.wave>=4?"The horde thins. Above the city, the sky begins to crack.":"Another wave is already climbing out of the dark."]}:{title:"The line breaks.",lines:["You are dragged back behind the barricades."]});
+      return;
     }
-    
-    if (!action.aoe) { nc[tIdx] = target; }
-    setGuardActive(newGuard);setStats(ns);setCombat(nc);
-    if(nc.every(e=>e.hp<=0)){endCombat(true,ns,nc);return;}
-    if(target.hp<=0){const next=nc.findIndex(e=>e.hp>0);if(next>=0)setActiveEnemyIdx(next);}
-    setCombatPhase("enemy");setTimeout(()=>enemyTurn(nc,ns,newGuard),850);
-  }
-
-  function enemyTurn(enemies,ps,guarded){
-    try {
-      let ns={...ps};
-      for(let i=0;i<enemies.length;i++){
-        const m=enemies[i];if(m.hp<=0)continue;
-        if(enemyStunned[m.id]>0){setEnemyStunned(p=>({...p,[m.id]:p[m.id]-1}));addLog(`${m.name} stunned.`,"info");continue;}
-        const baseId=m.id.split("_")[0];const acts=M_ACT[baseId]||M_ACT.cur;
-        const a=acts[Math.floor(Math.random()*acts.length)];
-        if(a&&a.dmg&&a.dmg[1]>0){
-          if(rollDodge()){addLog(`Evaded ${m.name}!`,"heal");continue;}
-          let raw=Math.floor(Math.random()*(a.dmg[1]-a.dmg[0]+1))+a.dmg[0];
-          if(guarded&&i===0)raw=Math.max(0,raw-6);
-          const dmg=Math.max(1,raw-getBonusDef());
-          ns.hp=Math.max(0,ns.hp-dmg);SFX.hit();
-          addLog(`${m.name}: ${dmg} damage.`,"dmg");
-          if(a.effect==="drain_mp")ns.mp=Math.max(0,ns.mp-10);
-        }
-        if(ns.hp<=0)break;
-      }
-      setStats(ns);
-      if(ns.hp<=0){SFX.defeat();addLog("You collapse.","sys");setCombatPhase("result");setCombatResult("lose");return;}
-      setCombatPhase("player");
-    } catch(err) {
-      console.error(err);
-      setCombatPhase("player");
-    }
-  }
-  function endCombat(won,fs,finalEnemies){
-    setCombatPhase("result");setCombatResult(won?"win":"lose");
-    if(won){
+    if(result==="win"){
+      const finalEnemies=battle.enemies;
       let totalXp=0,totalBronze=0;
-      finalEnemies.forEach(e=>{totalXp+=e.reward.xp;totalBronze+=e.reward.bronze;});
+      finalEnemies.forEach(e=>{totalXp+=e.reward?.xp||0;totalBronze+=e.reward?.bronze||0;});
       const rm=cls?.id==="adventurer"?RANK_MULT[advRankIdx]:1.5;
       const gm=diff?.goldMult||1;
       const bonus=Math.round(totalBronze*(1+(postDoomsday?0:doomsday*0.08))*rm*gm);
       setXp(x=>x+totalXp);setBronze(b=>b+bonus);setTotalEarned(t=>t+bonus);setTotalKills(k=>k+finalEnemies.length);
       if(!postDoomsday)setDoomsday(d=>Math.min(10,d+0.25));
-      SFX.reward();addLog(`Victory. +${totalXp} XP, +${bonus} Bronze.`,"reward");
-      
-      // Tenebrim Post-Combat Processing
-      if (race?.id === "tenebrim") {
-         // Check if we were fighting humans
-         if (finalEnemies.some(e => e.name.includes("Syndicate") || e.name.includes("Guard") || e.name.includes("Mercenary") || e.name.includes("Driver"))) {
-            if (finalEnemies.some(e => e.name === "Syndicate Leader")) {
-               setLiberationQuest("completed");
-               notify("The Syndicate is destroyed. You are truly free.", "#ffd966");
-               addLog("You have liberated your people.", "sys");
-            } else {
-               const rescued = Math.floor(Math.random() * 2) + 1;
-               setTenebrimAllies(a => a + rescued);
-               notify(`Camp cleared! Rescued ${rescued} captives.`, "#3ec995");
-               addLog(`Your rebel force grows. Allies: ${tenebrimAllies + rescued}`, "sys");
-            }
-         } else {
-            // Standard monster meat harvesting
-            const meatGained = finalEnemies.length * (Math.floor(Math.random() * 3) + 1);
-            setSurvivalInv(i => ({...i, meat: (i.meat || 0) + meatGained}));
-            addLog(`Harvested ${meatGained} meat from the carcasses.`, "sys");
-         }
-      }
-
-      if(cls?.id==="adventurer"&&hasBadge&&advRankIdx<5){const newXp=xp+totalXp;if(newXp>=RANK_THRESHOLDS[advRankIdx]){setAdvRankIdx(i=>i+1);SFX.rankup();notify(`Rank up: ${RANKS[advRankIdx+1]}!`,"#3ec995");}}
-      if(cls?.id==="hunter"){const ns=Math.min(5,Math.floor((xp+totalXp)/300)+1);if(ns>hunterStars){setHunterStars(ns);SFX.rankup();notify(`Hunter ★${ns}`,"#3ec995");}}
-      if(fs.hp<=fs.maxHp*0.15){const nc=nearDeathWins+1;setNearDeathWins(nc);if(nc>=3&&!techniqueUnlocked){setTechniqueUnlocked(true);notify("Technique stirs.","#9a6c10");}}
-    }else if(diff?.perma){addLog("Permadeath: progress lost.","sys");setTimeout(returnToMenu,2000);}
-    // FIX: Auto-save after combat
-    setTimeout(() => { try { exportSave(true); } catch(e){} }, 500);
+      addLog(`Victory. +${totalXp} XP, +${bonus} Bronze.`,"reward");
+      const lines=[`+${totalXp} XP`,`+${bonus} Bronze`,`${battle.round-1} rounds`];
+      if(cls?.id==="adventurer"&&hasBadge&&advRankIdx<5){const newXp=xp+totalXp;if(newXp>=RANK_THRESHOLDS[advRankIdx]){setAdvRankIdx(i=>i+1);SFX.rankup();notify(`Rank up: ${RANKS[advRankIdx+1]}!`,"#3ec995");lines.push(`Rank up → ${RANKS[advRankIdx+1]}`);}}
+      if(cls?.id==="hunter"){const ns=Math.min(5,Math.floor((xp+totalXp)/300)+1);if(ns>hunterStars){setHunterStars(ns);SFX.rankup();notify(`Hunter ★${ns}`,"#3ec995");lines.push(`Hunter qualification → ★${ns}`);}}
+      if(fp.hp<=fp.maxHp*0.15){const nc=nearDeathWins+1;setNearDeathWins(nc);lines.push("A near-death victory. Something in you hardens.");if(nc>=3&&!techniqueUnlocked){setTechniqueUnlocked(true);notify("Technique stirs.","#9a6c10");}}
+      setCombatSummary({title:"Victory",lines});
+    }else{
+      setCombatSummary({title:diff?.perma?"You have fallen.":"You collapse.",lines:[diff?.perma?"Permadeath: this life is over.":"Someone drags you back to town. You wake up sore and lighter in the purse."]});
+      if(diff?.perma)addLog("Permadeath: progress lost.","sys");
+    }
+    setTimeout(()=>{try{exportSave(true);}catch(e){}},500);
   }
 
   function startSiphon(){const nodes=Array.from({length:6},(_,i)=>({id:i,level:Math.random()*30+10,rising:Math.random()*1.8+1.0+doomsday*0.15}));setSiphonNodes(nodes);setSiphonScore(0);setSiphonActive(true);setSiphonTime(30);setSiphonResult(null);setScreen("siphon");}
@@ -907,93 +776,22 @@ function startSlaverCombat(isBoss) {
     return () => window.removeEventListener("keydown", h);
   }, [colQte, colosseum, screen]);
 
+  // ── Doomsday: five waves through the standard combat screen, allies fight beside you ──
   function startEndgame(idx){
     setEndgameWave(idx);
     const stars=[3,3,4,4,5];const sn=stars[idx];
     const pool=MONSTERS.filter(m=>m.star===sn||m.star===sn-1);
-    const wave=Array.from({length:3},()=>{const b=pool[Math.floor(Math.random()*pool.length)];const sc=1.5+idx*0.2;return{...b,id:b.id+"_"+Math.random(),hp:Math.round(b.hp*sc),maxHp:Math.round(b.hp*sc),atk:Math.round(b.atk*sc),def:b.def};});
-    setEndgameMonsters(wave);setCombatResult(null);
-    setLog([{msg:`Wave ${idx+1}/5`,type:"sys",id:Date.now()}]);
-    setScreen("endgame_combat");
+    const sc=(1.4+idx*0.18)*(diff?.hpMult||1);
+    const wave=Array.from({length:3},()=>makeEnemy(pool[Math.floor(Math.random()*pool.length)],{hp:sc,atk:(1.25+idx*0.12)*(diff?.enemyAtk||1)}));
+    setCombatOrigin("overworld");
+    launchCombat(wave,{mode:"doomsday",wave:idx});
   }
   function recruit(){const cost=120+allies*40;if(bronze<cost){notify("Not enough.","#b83a2a");return;}setBronze(b=>b-cost);setAllies(a=>a+1);notify(`Ally (${allies+1})`,"#3ec995");Math.random()<0.5?SFX.cryM():SFX.cryF();}
-  function endAttack(idx){
-    const t=[...endgameMonsters];const dmg=Math.max(1,(getBonusAtk()+Math.floor(Math.random()*15)+10)-t[idx].def);t[idx].hp-=dmg;SFX.attack();addLog(`Strike: ${dmg}.`,"dmg");
-    let ah=0;for(let i=0;i<allies;i++){const al=t.filter(x=>x.hp>0);if(al.length===0)break;const tg=al[Math.floor(Math.random()*al.length)];const ad=Math.max(1,15+Math.floor(Math.random()*10)-tg.def);tg.hp-=ad;ah+=ad;}
-    if(allies>0)addLog(`Allies: ${ah}.`,"info");
-    const surv=t.filter(x=>x.hp>0);setEndgameMonsters(t);
-    if(surv.length===0){addLog(`Wave ${endgameWave+1} cleared.`,"reward");if(endgameWave>=4)setTimeout(()=>startLumenari(),1200);else setTimeout(()=>startEndgame(endgameWave+1),1200);return;}
-    let ns={...stats};surv.forEach(s=>{if(rollDodge())return;const dmg=Math.max(1,Math.floor(Math.random()*15)+10-getBonusDef());ns.hp=Math.max(0,ns.hp-dmg);addLog(`${s.name}: ${dmg}.`,"dmg");});
-    if(allies>0&&Math.random()<0.2){setAllies(a=>Math.max(0,a-1));addLog("An ally has fallen.","sys");}
-    setStats(ns);if(ns.hp<=0){SFX.defeat();setCombatResult("lose");}
+  function startLumenari(){setLumenariPhase(1);setLumenKey(k=>k+1);setScreen("lumenari_intro");}
+  function lumenWon(player,alliesLeft){
+    setStats(s=>({...s,hp:Math.max(1,Math.round(player.hp)),mp:Math.round(player.mp),stamina:Math.round(player.stamina)}));
+    setAllies(alliesLeft);stopBoss();setScreen("lumenari_outro");
   }
-
-  const LUMEN_HP={1:280,2:320,3:350};const LUMEN_DEF={1:30,2:35,3:42};
-  function startLumenari(){SFX.lumen();setLumenari({phaseHp:LUMEN_HP[1],phaseMaxHp:LUMEN_HP[1],def:LUMEN_DEF[1]});setLumenariPhase(1);setLumenCombatPhase("player");setQteActive(false);setGolems([{id:"g0",name:"Golem",hp:120,maxHp:120},{id:"g1",name:"Golem",hp:120,maxHp:120},{id:"g2",name:"Golem",hp:120,maxHp:120}]);setLog([{msg:"The sky cracks open.",type:"lumen",id:Date.now()}]);setCombatResult(null);setScreen("lumenari");}
-
-  function lumenAttack(action){
-    if(lumenCombatPhase!=="player"||combatResult||qteActive)return;
-    let ns={...stats},nl={...lumenari};
-    if(action.staminaCost&&ns.stamina<action.staminaCost){notify("Not enough stamina.","#b83a2a");return;}
-    if(action.mpCost&&ns.mp<action.mpCost){notify("Not enough mana.","#b83a2a");return;}
-    const raw=action.dmg?Math.floor(Math.random()*(action.dmg[1]-action.dmg[0]+1))+action.dmg[0]:Math.floor(Math.random()*8)+5;
-    const dmg=Math.max(1,raw+getBonusAtk()-nl.def);
-    if(action.staminaCost)ns.stamina-=action.staminaCost;if(action.mpCost)ns.mp-=action.mpCost;
-    nl.phaseHp=Math.max(0,nl.phaseHp-dmg);
-    if(allies>0){const ad=allies*(8+Math.floor(Math.random()*6));nl.phaseHp=Math.max(0,nl.phaseHp-ad);addLog(`Allies: ${ad}.`,"info");}
-    SFX.attack();addLog(`${action.name}: ${dmg}.`,"dmg");
-    setStats(ns);
-    if(nl.phaseHp<=0){
-      if(lumenariPhase===1){setLumenariPhase(2);nl={phaseHp:LUMEN_HP[2],phaseMaxHp:LUMEN_HP[2],def:LUMEN_DEF[2]};addLog("The Lumenari rises.","lumen");}
-      else if(lumenariPhase===2){setLumenariPhase(3);nl={phaseHp:LUMEN_HP[3],phaseMaxHp:LUMEN_HP[3],def:LUMEN_DEF[3]};addLog("Pillars of stone erupt.","lumen");}
-      else{
-        setLumenari(nl);addLog("The Lumenari shatters.","reward");SFX.victory();stopBoss();setCombatResult("win");setShowVictory(true);
-        if(nobleQuestActive) { setBronze(b=>b+20000); notify("Noble Quest Completed: +20 000 B!","#ffd966"); }
-        return;
-      }
-    }
-    setLumenari(nl);setLumenCombatPhase("enemy");setTimeout(()=>lumenEnemyTurn(nl,ns),800);
-  }
-  function lumenEnemyTurn(nl,ps){
-    let ns={...ps};
-    if(lumenariPhase===1){if(rollDodge()){addLog("Evaded!","heal");}else{const dmg=Math.max(1,32+Math.floor(Math.random()*14)-getBonusDef());ns.hp=Math.max(0,ns.hp-dmg);ns.mp=Math.max(0,ns.mp-15);SFX.hit();addLog(`Lumenari: ${dmg}.`,"dmg");}}
-    else if(lumenariPhase===2){addLog("Spears of light rain!","lumen");const seq=Array.from({length:4},()=>["←","→","↑","↓"][Math.floor(Math.random()*4)]);setQteSequence(seq);setQteIdx(0);setQteActive(true);setStats(ns);return;}
-    else if(lumenariPhase===3){const al=golems.filter(g=>g.hp>0);if(al.length>0){const td=al.length*(16+Math.floor(Math.random()*8));const dmg=Math.max(1,td-getBonusDef());ns.hp=Math.max(0,ns.hp-dmg);if(dmg>0){addLog(`Golems: ${dmg}.`,"dmg");SFX.hit();}}if(allies>0&&Math.random()<0.3){setAllies(a=>Math.max(0,a-1));addLog("An ally consumed.","sys");}if(Math.random()<0.5){const seq=Array.from({length:3},()=>["←","→","↑","↓"][Math.floor(Math.random()*4)]);setQteSequence(seq);setQteIdx(0);setQteActive(true);setStats(ns);return;}}
-    setStats(ns);if(ns.hp<=0){SFX.defeat();setCombatResult("lose");setLumenCombatPhase("result");return;}
-    setLumenCombatPhase("player");
-  }
-  function qteInput(dir){
-    if(!qteActive)return;
-    if(dir==="FAIL" || dir !== qteSequence[qteIdx]){
-      setQteActive(false);
-      const dmg=Math.max(1,42+Math.floor(Math.random()*15)-getBonusDef());
-      setStats(s=>({...s,hp:Math.max(0,s.hp-dmg)}));
-      addLog(dir === "FAIL" ? `Too slow! Spears: ${dmg}.` : `Spears: ${dmg}.`,"dmg");
-      SFX.hit();setLumenCombatPhase("player");
-    } else {
-      if(qteIdx+1>=qteSequence.length){setQteActive(false);addLog("Evaded!","heal");SFX.spell();setLumenCombatPhase("player");}
-      else { setQteIdx(i=>i+1); setLumenQteTime(100); } // Reset timer on correct key
-    }
-  }
-
-  // NEW: The actual timer logic!
-  useEffect(() => {
-    if (!qteActive || screen !== "lumenari") return;
-    const tick = setInterval(() => {
-       setLumenQteTime(prev => {
-          if (prev <= 5) { qteInput("FAIL"); return 100; }
-          return prev - 5; // Drains the bar
-       });
-    }, 100);
-    return () => clearInterval(tick);
-  }, [qteActive, screen]);
-
-  useEffect(()=>{
-    if(!qteActive)return;
-    const h=(e)=>{if(e.key==="ArrowLeft")qteInput("←");else if(e.key==="ArrowRight")qteInput("→");else if(e.key==="ArrowUp")qteInput("↑");else if(e.key==="ArrowDown")qteInput("↓");};
-    window.addEventListener("keydown",h);return()=>window.removeEventListener("keydown",h);
-  },[qteActive,qteIdx,qteSequence]);
-  function attackGolem(idx){if(lumenCombatPhase!=="player"||qteActive)return;const ng=[...golems];const dmg=Math.max(1,getBonusAtk()+Math.floor(Math.random()*12)+8);ng[idx]={...ng[idx],hp:Math.max(0,ng[idx].hp-dmg)};addLog(`Golem ${idx+1}: ${dmg}.`,"dmg");SFX.attack();setGolems(ng);}
 
   async function continueAfterLumen(){
     setShowVictory(false);
@@ -1025,7 +823,12 @@ function startSlaverCombat(isBoss) {
 
   // ── Rendering av UI ──────────────────────────────────────────────────────
   const renderGameScreen = () => {
-    if(showCutscene)return <div style={{minHeight:"100vh",background:"radial-gradient(circle,#3a0a0a,#000 70%)",display:"flex",alignItems:"center",justifyContent:"center",animation:"shake 0.4s ease infinite"}}><div style={{textAlign:"center",padding:"0 2rem"}}><h1 style={{fontSize:42,fontWeight:800,color:"#e85c3a",letterSpacing:"-0.03em",textShadow:"0 0 30px #e85c3a",marginBottom:14}}>The Doomsday Has Come</h1><p style={{fontSize:15,color:"rgba(255,200,180,0.7)"}}>The earth screams.</p></div></div>;
+    if(showCutscene)return <Cinematic onDone={()=>{setShowCutscene(false);startEndgame(0);}} shots={[
+      {text:"Far below, at the bottom of the world, there is a sealed chamber.",sub:"Its siphons have run day and night for decades.",bg:"radial-gradient(ellipse at 50% 80%, #2a0e3a 0%, #07020c 70%)",fx:["pulse","motes"],color:"#c9b8ff",duration:5600},
+      {text:"Mana sinks like cold air. It pools. It thickens. And tonight, the siphons fall behind.",bg:"radial-gradient(ellipse at 50% 90%, #4a1030 0%, #0a0208 70%)",fx:["pulse","embers"],color:"#ffb8c8",duration:5800,sfx:()=>SFX.roar()},
+      {text:"The Underworld takes the first blow. The surface receives what is left.",sub:"Tides of monsters claw their way upward.",bg:"radial-gradient(ellipse at 50% 100%, #6a1a08 0%, #120403 70%)",fx:["embers","shake","vignette-red"],color:"#ffb08a",duration:5600},
+      {text:"The Doomsday has come.",bg:"radial-gradient(circle, #3a0a0a, #000 70%)",fx:["flash","shake","vignette-red","embers"],color:"#ff6b4a",duration:4200,sfx:()=>{SFX.roar();SFX.lumen();}},
+    ]}/>;
 
     if(screen==="main_menu")return (
     <div style={{
@@ -1617,8 +1420,8 @@ if (screen === "devil_scenario") {
         <span style={{fontWeight:900,fontSize:16,color:isUw?"#e8c878":"#d4cbf8",letterSpacing:"0.05em",textShadow:"0 2px 10px rgba(0,0,0,0.5)"}}>{isUw?"UNDERWORLD":"ALERIA"}</span>
         <div style={{flex:1,display:"flex",gap:12,alignItems:"center",flexWrap:"wrap",marginLeft:10}}>
           {[
-            { l:"HP", v:stats.hp, m:stats.maxHp+(cityLevel?.walls*5 || 0), c:"#e85c3a" },
-            ...(race?.canSpell ? [{ l:"MP", v:stats.mp, m:stats.maxMp+(cityLevel?.pump*5 || 0), c:"#a89df0" }] : []),
+            { l:"HP", v:stats.hp, m:stats.maxHp, c:"#e85c3a" },
+            ...(race?.canSpell ? [{ l:"MP", v:stats.mp, m:stats.maxMp, c:"#a89df0" }] : []),
             { l:"STA", v:stats.stamina, m:stats.maxStamina, c:"#3ec995" }
           ].map(b=>(
             <div key={b.l} style={{display:"flex",flexDirection:"column",gap:4,minWidth:130, background:"rgba(0,0,0,0.4)", padding:"6px 12px", borderRadius:8, border:"1px solid rgba(255,255,255,0.06)", boxShadow:`0 2px 12px ${b.c}15`}}>
@@ -1717,98 +1520,37 @@ if (screen === "devil_scenario") {
         {isUw&&tab==="city"&&<CityView bronze={bronze} setBronze={setBronze} cityLevel={cityLevel} setCityLevel={setCityLevel} setStats={setStats} notify={notify}/>}
         {/* Nya vyer anropas här */}
         {screen==="training"&&<TrainingView physicalLevel={physicalLevel} setPhysicalLevel={setPhysicalLevel} setScreen={setScreen} notify={notify} race={race} />}
-        {screen==="endgame"&&<EndgameView race={race} bronze={bronze} setBronze={setBronze} stats={stats} setStats={setStats} notify={notify} onEnterArena={() => startEndgame(0)} expeditions={expeditions} setExpeditions={setExpeditions} guildUpgrades={guildUpgrades} setGuildUpgrades={setGuildUpgrades} />}
-        {screen==="tenebrim_survival" && <TenebrimSurvivalView food={food} setFood={setFood} energy={energy} setEnergy={setEnergy} survivalStats={survivalStats} setSurvivalStats={setSurvivalStats} survivalInv={survivalInv} setSurvivalInv={setSurvivalInv} stats={stats} setStats={setStats} notify={notify} startCombat={() => startCombat(false)} locationsExplored={locationsExplored} setLocationsExplored={setLocationsExplored} liberationQuest={liberationQuest} setLiberationQuest={setLiberationQuest} tenebrimAllies={tenebrimAllies} startSlaverCombat={startSlaverCombat} />}
+        {screen==="endgame"&&<EndgameView race={race} bronze={bronze} setBronze={setBronze} stats={stats} setStats={setStats} notify={notify} onEnterArena={startColosseum} expeditions={expeditions} setExpeditions={setExpeditions} guildUpgrades={guildUpgrades} setGuildUpgrades={setGuildUpgrades} />}
       </div>
     </div>;
   }
 
-  // ── Stridsvyerna ────────────────────────────────────────────────────────
-  if(screen==="combat"){
-    const learned=visibleSpells().filter(s=>s.learned&&s.combatUse);
-    const ra=ATTACKS_BY_RACE[race?.id]||ATTACKS_BY_RACE.human;
-    
-    // Dynamically inject Survival Spears for Tenebrim
-    let dynActions = [];
-    if (race?.id === "tenebrim") {
-       if ((survivalInv?.heavySpear||0) > 0) dynActions.push({id:"heavy_spear", name:"Heavy Spear", dmg:[15, 26], desc:"Fierce thrust. 10% break chance.", staminaCost: 15});
-       else if ((survivalInv?.huntingGear||0) > 0) dynActions.push({id:"spear_thrust", name:"Spear Thrust", dmg:[8, 16], desc:"Basic thrust. 20% break chance.", staminaCost: 10});
-    }
-
-    const ACTIONS=[...ra, ...dynActions, {id:"guard",name:"Guard",desc:"Reduce next hit by 6."},{id:"focus",name:"Focus",desc:"+15 stamina."},...(race?.canSpell?learned.map(s=>({id:s.id,name:s.combatUse.label,dmg:s.combatUse.dmg,mpCost:s.combatUse.mpCost,desc:s.combatUse.desc||"Spell.",isSpell:true,...(s.combatUse.effect?{effect:s.combatUse.effect,turns:s.combatUse.turns}:{})})):[])];
-    const highStar=combat?Math.max(...combat.map(e=>e.star)):0;
-    const isHigh=highStar>=3;
-    return <div style={{minHeight:"100vh",background:isHigh?"linear-gradient(160deg,#0a0410,#1c0a18,#0d0510)":"linear-gradient(160deg,#0d0510,#180a12)",fontFamily:"var(--font-sans)"}}>
-      
-      {warnVisible&&warnMonster&&<div style={{position:"fixed",top:0,left:0,right:0,zIndex:300,background:"linear-gradient(90deg,#a82828,#c84838)",padding:"14px 20px",display:"flex",alignItems:"center",gap:12,animation:"warnSlide 0.35s ease",boxShadow:"0 4px 24px rgba(184,58,42,0.5)"}}><span style={{fontSize:22}}>⚠</span><div><p style={{fontWeight:800,fontSize:14,color:"#fff"}}>{warnMonster.star}-STAR THREAT</p><p style={{fontSize:12,color:"rgba(255,255,255,0.75)"}}>{warnMonster.name}</p></div></div>}
-      <div style={{background:"rgba(0,0,0,0.6)",borderBottom:"1px solid rgba(255,255,255,0.1)",padding:"12px 16px",display:"flex",gap:12,alignItems:"center",flexWrap:"wrap",backdropFilter:"blur(8px)"}}>
-        <span style={{fontWeight:800,fontSize:13,color:"#e85c3a",letterSpacing:"0.04em"}}>COMBAT</span>
-        {combat&&<StarRating stars={highStar} max={highStar}/>}
-        {combatPhase==="player"&&!combatResult&&<div style={{marginLeft:"auto"}}><button data-testid="combat-flee-btn" className="al-btn flee-btn" onClick={flee} style={{padding:"10px 22px",borderRadius:99,fontWeight:900,cursor:"pointer",fontSize:13,letterSpacing:"0.1em",textTransform:"uppercase",display:"inline-flex",alignItems:"center",gap:8,color:"#ffb8a8",border:"2px solid #e85c3a",background:"linear-gradient(180deg, rgba(232,92,58,0.2) 0%, rgba(120,30,15,0.4) 100%)"}}><span style={{fontSize:15}}>↩</span> Flee <span style={{fontSize:10,opacity:0.7}}>(-5% B)</span></button></div>}
-      </div>
-
-      <div style={{maxWidth:780,margin:"0 auto",padding:"16px"}}>
-        <div style={{display:"grid",gridTemplateColumns:"260px 1fr",gap:14,marginBottom:14}}>
-          <Panel style={{background:"linear-gradient(180deg,rgba(60,90,200,0.1),rgba(60,90,200,0.04))",borderColor:"rgba(124,111,212,0.25)"}}>
-            <p style={{fontSize:10,color:"rgba(200,192,248,0.4)",marginBottom:10,letterSpacing:"0.1em",fontWeight:700}}>YOU</p>
-            {[{l:"HP",v:stats.hp,m:stats.maxHp+(cityLevel.walls*5),c:"#e85c3a"},{l:"MP",v:stats.mp,m:stats.maxMp+(cityLevel.pump*5),c:"#a89df0"},{l:"Sta",v:stats.stamina,m:stats.maxStamina,c:"#3ec995"}].map(b=>(<div key={b.l} style={{marginBottom:7}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><span style={{fontSize:11,color:"rgba(200,192,248,0.55)",fontWeight:600}}>{b.l}</span><span style={{fontSize:11,color:"rgba(200,192,248,0.4)"}}>{b.v}/{b.m}</span></div><Bar val={b.v} max={b.m} color={b.c} h={6}/></div>))}
-            <div style={{display:"flex",gap:5,marginTop:7,flexWrap:"wrap"}}>{guardActive&&<Tag color="#3ec995">Guard</Tag>}{weapon.id!=="fists"&&<Tag color="#a8740c">{weapon.name}</Tag>}{race?.id==="tetrabrachian"&&weapon2.id!=="fists"&&<Tag color="#a8740c">{weapon2.name}</Tag>}</div>
-          </Panel>
-          <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            {combat?.map((e,i)=>(<Panel key={e.id} onClick={e.hp>0?()=>setActiveEnemyIdx(i):undefined} style={{opacity:e.hp<=0?0.35:1,background:i===activeEnemyIdx&&e.hp>0?"linear-gradient(180deg,rgba(232,92,58,0.15),rgba(232,92,58,0.06))":"linear-gradient(180deg,rgba(232,92,58,0.06),rgba(232,92,58,0.02))",borderColor:i===activeEnemyIdx&&e.hp>0?"rgba(232,92,58,0.4)":"rgba(232,92,58,0.18)",cursor:e.hp>0?"pointer":"default",animation:e.star>=4&&e.hp>0?"glowPulse 2s ease infinite":undefined,padding:"12px 14px"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-                <div style={{display:"flex",alignItems:"center",gap:8}}><StarRating stars={e.star} max={e.star}/><span style={{fontWeight:600,fontSize:12,color:"rgba(255,200,180,0.85)"}}>{e.name}</span></div>
-                <span style={{fontSize:11,color:"rgba(200,192,248,0.45)"}}>{e.hp}/{e.maxHp}</span>
-              </div>
-              <Bar val={e.hp} max={e.maxHp} color={e.hp/e.maxHp>0.5?"#e0a523":"#e85c3a"} h={5}/>
-              {enemyStunned[e.id]>0&&<div style={{marginTop:5}}><Tag color="#7c6fd4">Stunned</Tag></div>}
-            </Panel>))}
-          </div>
-        </div>
-
-        <div ref={logRef} style={{minHeight:80,maxHeight:130,overflowY:"auto",padding:"10px 12px",border:"1px solid rgba(255,255,255,0.07)",borderRadius:10,fontSize:12,lineHeight:1.85,marginBottom:12,background:"rgba(0,0,0,0.35)"}}>{log.map(l=><div key={l.id} style={{color:LOG_C[l.type]||"#ccc"}}>{l.msg}</div>)}</div>
-
-        {potions.length>0&&combatPhase==="player"&&!combatResult&&<div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}}>{getStacks().map(p=><Btn key={p.id} small variant="success" onClick={()=>usePotion(p)}>{p.name} x{p.count}</Btn>)}</div>}
-
-        {combatResult?<div style={{display:"flex",gap:10}}>
-          {combatResult==="win"?<Btn variant="success" onClick={()=>{setScreen(combatOrigin);setTab("map");}}>Return</Btn>:<Btn variant="danger" onClick={()=>{if(diff?.perma)startNewGame();else{setStats(s=>({...s,hp:Math.round(s.maxHp*0.4),stamina:Math.round(s.maxStamina*0.5)}));setScreen(combatOrigin);setTab("map");}}}>{diff?.perma?"Return to menu":"Respawn"}</Btn>}
-        </div>:combatPhase==="player"?(
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:14,padding:"4px 2px"}}>
-            {ACTIONS.map(a=>{const noSta=a.staminaCost&&stats.stamina<a.staminaCost;const noMp=a.mpCost&&stats.mp<a.mpCost;const dis=!!noSta||!!noMp;return <button data-testid={`combat-action-${a.id}`} key={a.id} disabled={dis} onClick={()=>playerAct(a)} className="action-card" style={{borderColor:a.isSpell?"rgba(168,157,240,0.3)":"rgba(255,255,255,0.15)",padding:"14px 16px",minHeight:90}}>
-              <p style={{fontWeight:700,fontSize:14,color:a.isSpell?"#a89df0":a.id==="guard"?"#3ec995":a.id==="heavy"||a.id==="quad_flurry"||a.id==="power_strike"||a.id==="hell_strike"?"#e85c3a":"#d4cbf8",marginBottom:6}}>{a.name}</p>
-              <p style={{fontSize:11,color:"rgba(200,192,248,0.5)",lineHeight:1.5,marginBottom:10}}>{a.desc}</p>
-              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{a.mpCost>0&&<Tag color="#a89df0">{a.mpCost} MP</Tag>}{a.staminaCost>0&&<Tag color="#3ec995">{a.staminaCost} Sta</Tag>}{a.aoe&&<Tag color="#ff8c00">AoE</Tag>}{a.hits>1&&<Tag color="#a8740c">×{a.hits}</Tag>}</div>
-            </button>;})}
-          </div>
-        ):<p style={{fontSize:12,color:"rgba(200,192,248,0.35)"}}>Enemy acting…</p>}
+  // ── Combat ─────────────────────────────────────────────────────────────
+  if(screen==="combat"&&combat){
+    const isDoom=combat.mode==="doomsday";
+    const respawn=()=>{if(diff?.perma){startNewGame();return;}const lost=Math.ceil(bronze*0.1);setBronze(b=>Math.max(0,b-lost));setStats(s=>({...s,hp:Math.round(s.maxHp*0.4),stamina:Math.round(s.maxStamina*0.5)}));setScreen(combatOrigin);setTab("map");};
+    const resultContent=combatSummary&&<div>
+      <h2 style={{margin:"0 0 8px",color:combatResult==="win"?"#3ec995":"#e85c3a",letterSpacing:"0.04em"}}>{combatSummary.title}</h2>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}}>{combatSummary.lines.map((l,k)=><span key={k} className="pill" style={{color:"#e0d8ff",borderColor:"rgba(255,255,255,0.18)",background:"rgba(255,255,255,0.05)"}}>{l}</span>)}</div>
+      <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+        {!isDoom&&combatResult==="win"&&<Btn variant="success" onClick={()=>{setScreen(combatOrigin);setTab("map");}}>Return</Btn>}
+        {!isDoom&&combatResult==="lose"&&<Btn variant="danger" onClick={respawn}>{diff?.perma?"Return to menu":"Wake up (-10% Bronze)"}</Btn>}
+        {isDoom&&combatResult==="win"&&<>
+          <Btn variant={combat.wave>=4?"gold":"danger"} onClick={()=>{if(combat.wave>=4)startLumenari();else startEndgame(combat.wave+1);}}>{combat.wave>=4?"Look up ↗":`Hold the line — wave ${combat.wave+2}`}</Btn>
+          <Btn variant="amber" onClick={recruit} disabled={bronze<120+allies*40}>Recruit militia ({120+allies*40} B) · {allies} allies</Btn>
+          {getStacks().length>0&&<span style={{fontSize:11,color:"rgba(255,255,255,0.45)"}}>Potions carry into the next wave.</span>}
+        </>}
+        {isDoom&&combatResult==="lose"&&<Btn variant="danger" onClick={()=>{if(diff?.perma){startNewGame();return;}setStats(s=>({...s,hp:s.maxHp,mp:s.maxMp,stamina:s.maxStamina}));startEndgame(combat.wave);}}>{diff?.perma?"Return to menu":"Retry wave"}</Btn>}
       </div>
     </div>;
+    return <CombatScreen key={combat.key} initialEnemies={combat.enemies} player={battlePlayer()} ctx={combatCtx()} actions={combatActions()}
+      potions={getStacks()} onConsumePotion={consumePotion} allies={isDoom?allies:0}
+      title={isDoom?`DOOMSDAY · WAVE ${combat.wave+1}/5`:"CONTRACT"} subtitle={isDoom?"The horde climbs from below.":undefined}
+      background={isDoom?"radial-gradient(ellipse at top,#3a0c0c 0%,#120404 70%)":undefined}
+      canFlee={!isDoom} onFlee={flee} onEnd={handleCombatEnd} resultContent={resultContent}
+      warning={warnVisible&&warnMonster&&<div style={{position:"fixed",top:0,left:0,right:0,zIndex:300,background:"linear-gradient(90deg,#a82828,#c84838)",padding:"14px 20px",display:"flex",alignItems:"center",gap:12,animation:"warnSlide 0.35s ease",boxShadow:"0 4px 24px rgba(184,58,42,0.5)"}}><span style={{fontSize:22}}>⚠</span><div><p style={{fontWeight:800,fontSize:14,color:"#fff",margin:0}}>{warnMonster.star}-STAR THREAT</p><p style={{fontSize:12,color:"rgba(255,255,255,0.75)",margin:0}}>{warnMonster.name}</p></div></div>}/>;
   }
-
-  if(screen==="endgame_combat")return <div style={{minHeight:"100vh",background:"linear-gradient(160deg,#1a0808,#2a1010)",fontFamily:"var(--font-sans)",position:"relative"}}>
-    <div style={{position:"fixed",inset:0,pointerEvents:"none",animation:"redEdge 1.4s ease infinite",zIndex:0}}/>
-    <div style={{background:"rgba(0,0,0,0.6)",borderBottom:"1px solid rgba(232,92,58,0.4)",padding:"12px 16px",display:"flex",gap:14,alignItems:"center",position:"relative",zIndex:1}}>
-      <span style={{fontWeight:800,fontSize:14,color:"#e85c3a",letterSpacing:"0.03em"}}>DOOMSDAY · Wave {endgameWave+1}/5</span>
-      <span style={{fontSize:12,color:"rgba(255,200,180,0.6)"}}>Allies: {allies}</span>
-      <div style={{marginLeft:"auto"}}><Btn small variant="amber" onClick={recruit} disabled={bronze<120+allies*40}>Recruit ({120+allies*40} B)</Btn></div>
-    </div>
-    <div style={{maxWidth:780,margin:"0 auto",padding:"18px",position:"relative",zIndex:1}}>
-      <Panel style={{marginBottom:14,background:"rgba(40,15,15,0.5)"}}>
-        <p style={{fontSize:11,color:"rgba(255,200,180,0.5)",marginBottom:8}}>YOU</p>
-        {[{l:"HP",v:stats.hp,m:stats.maxHp+(cityLevel.walls*5),c:"#e85c3a"},{l:"MP",v:stats.mp,m:stats.maxMp+(cityLevel.pump*5),c:"#a89df0"}].map(b=>(<div key={b.l} style={{display:"flex",alignItems:"center",gap:6,marginBottom:5}}><span style={{fontSize:11,minWidth:50}}>{b.l} {b.v}/{b.m}</span><Bar val={b.v} max={b.m} color={b.c} h={5}/></div>))}
-      </Panel>
-      {potions.length>0&&!combatResult&&<Panel style={{marginBottom:10,background:"rgba(26,60,40,0.3)",borderColor:"rgba(62,201,149,0.2)"}}><p style={{fontSize:11,color:"rgba(62,201,149,0.6)",marginBottom:8}}>Potions</p><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{getStacks().map(p=><Btn key={p.id} small variant="success" onClick={()=>usePotion(p)}>{p.name} x{p.count}</Btn>)}</div></Panel>}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(175px,1fr))",gap:10,marginBottom:14}}>
-        {endgameMonsters.map((m,i)=>(<Panel key={m.id} style={{opacity:m.hp<=0?0.35:1,background:"rgba(60,15,15,0.4)",borderColor:"rgba(232,92,58,0.3)",cursor:m.hp>0?"pointer":"default"}} onClick={m.hp>0?()=>endAttack(i):undefined}>
-          <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}><StarRating stars={m.star} max={m.star}/><p style={{fontWeight:700,fontSize:12,color:"#e85c3a"}}>{m.name}</p></div>
-          <Bar val={Math.max(0,m.hp)} max={m.maxHp} color="#e85c3a" h={5}/>
-          <p style={{fontSize:10,color:"rgba(255,200,180,0.5)",marginTop:4}}>{Math.max(0,m.hp)}/{m.maxHp}</p>
-        </Panel>))}
-      </div>
-      <div ref={logRef} style={{maxHeight:150,overflowY:"auto",padding:"10px 12px",border:"1px solid rgba(232,92,58,0.2)",borderRadius:10,fontSize:12,lineHeight:1.85,background:"rgba(0,0,0,0.4)"}}>{log.map(l=><div key={l.id} style={{color:LOG_C[l.type]||"#ccc"}}>{l.msg}</div>)}</div>
-      {combatResult==="lose"&&<div style={{marginTop:14}}><Btn variant="danger" onClick={()=>{setStats(s=>({...s,hp:s.maxHp,mp:s.maxMp}));startEndgame(endgameWave);setCombatResult(null);}}>Retry wave</Btn></div>}
-    </div>
-  </div>;
+  if(screen==="combat"&&warnVisible&&warnMonster)return <div style={{minHeight:"100vh",background:"#0a0410"}}/>;
 
 // ── Colosseum (Arena UI) ─────────────────────────────────────────────────
   if(screen === "colosseum" && colosseum) {
@@ -1909,58 +1651,34 @@ if (screen === "devil_scenario") {
     </div>;
   }
 
-  if(screen==="lumenari"){
-    const phaseLabels={1:"PHASE I — GROUNDED",2:"PHASE II — LEVITATING",3:"PHASE III — AERIAL PLANE"};
-    const phaseCol={1:"#a89df0",2:"#ffd966",3:"#e85c3a"};
-    const learned=visibleSpells().filter(s=>s.learned&&s.combatUse);
-    const ra=ATTACKS_BY_RACE[race?.id]||ATTACKS_BY_RACE.human;
-    const ACT=[...ra.slice(0,3),...(race?.canSpell?learned.map(s=>({id:s.id,name:s.combatUse.label,dmg:s.combatUse.dmg||[10,18],mpCost:s.combatUse.mpCost,isSpell:true})):[])];
-    const canAct=lumenCombatPhase==="player"&&!combatResult&&!qteActive;
-    return <div style={{minHeight:"100vh",background:"radial-gradient(ellipse at top,#1a0a30 0%,#080010 60%,#000 100%)",fontFamily:"var(--font-sans)",display:"flex",flexDirection:"column",overflow:"hidden",position:"relative"}}>
-      {lumenariPhase>=2&&Array.from({length:14}).map((_,i)=>(<div key={i} style={{position:"fixed",left:`${3+i*7}%`,top:0,width:1.5,height:55,background:"linear-gradient(180deg,transparent,#ffd966cc,transparent)",animation:`lightRain ${1+Math.random()*1.6}s linear infinite`,animationDelay:`${Math.random()*2.2}s`,pointerEvents:"none",zIndex:0,boxShadow:"0 0 8px #ffd966"}}/>))}
-      {lumenari&&<div style={{padding:"18px 22px 16px",background:"linear-gradient(180deg,rgba(0,0,0,0.85),rgba(0,0,0,0.5))",borderBottom:"1px solid rgba(255,217,102,0.45)",position:"relative",zIndex:2,animation:"lumenGlow 3s ease infinite"}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-          <div><span className="gradient-text" style={{fontWeight:900,fontSize:26,letterSpacing:"-0.03em",textShadow:"0 0 20px rgba(255,217,102,0.4)"}}>LUMENARI</span><span style={{marginLeft:14,fontSize:11,color:phaseCol[lumenariPhase],fontWeight:700,letterSpacing:"0.15em"}}>{phaseLabels[lumenariPhase]}</span></div>
-          <div style={{display:"flex",gap:8,alignItems:"center"}}>{allies>0&&<Tag color="#3ec995">Allies: {allies}</Tag>}<span style={{fontSize:12,color:"rgba(255,217,102,0.7)",fontWeight:600}}>{lumenari.phaseHp}/{lumenari.phaseMaxHp}</span></div>
-        </div>
-        <Bar val={lumenari.phaseHp} max={lumenari.phaseMaxHp} color="#ffd966" h={14}/>
-      </div>}
-      <div style={{flex:1,display:"flex",position:"relative",zIndex:1,overflow:"hidden"}}>
-        <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"24px 16px",gap:18}}>
-          <p style={{fontSize:12,color:"rgba(255,217,102,0.5)",fontStyle:"italic",textAlign:"center",maxWidth:420,lineHeight:1.65}}>
-            {lumenariPhase===1&&"It barely floats. Each touch drains your mana."}
-            {lumenariPhase===2&&"It hangs in the air. Spears fall from above. (Use arrow keys on keyboard.)"}
-            {lumenariPhase===3&&"The ground is gone. Stone golems press in."}
-          </p>
-          {qteActive&&<div data-testid="lumen-qte" style={{width:"100%",maxWidth:480,padding:"26px 22px",borderRadius:18,background:"linear-gradient(180deg, rgba(255,217,102,0.18), rgba(232,92,58,0.1))",border:"2px solid #ffd966",animation:"qtePulse 0.8s ease infinite",textAlign:"center",boxShadow:"0 0 30px rgba(255,217,102,0.4), inset 0 0 25px rgba(255,217,102,0.1)"}}>
-            <p style={{fontWeight:900,fontSize:18,color:"#ffd966",marginBottom:6,letterSpacing:"0.1em"}}>⚡ EVADE ⚡</p> <div style={{width: "80%", margin: "0 auto 15px"}}><Bar val={lumenQteTime} max={100} color={lumenQteTime > 40 ? "#ffd966" : "#e85c3a"} h={8} /></div>
-            <p style={{fontSize:12,color:"rgba(255,217,102,0.75)",marginBottom:20,letterSpacing:"0.04em"}}>{qteIdx+1} / {qteSequence.length} — Use Arrow Keys or Click below</p>
-            <div style={{display:"flex",gap:10,justifyContent:"center",marginBottom:18}}>{qteSequence.map((d,i)=>(<span key={i} style={{width:48,height:48,display:"flex",alignItems:"center",justifyContent:"center",borderRadius:10,border:`2px solid ${i<qteIdx?"#3ec995":i===qteIdx?"#ffd966":"rgba(255,217,102,0.25)"}`,color:i<qteIdx?"#3ec995":i===qteIdx?"#ffd966":"rgba(255,217,102,0.35)",fontSize:24,fontWeight:900,background:i===qteIdx?"rgba(255,217,102,0.18)":i<qteIdx?"rgba(62,201,149,0.12)":"transparent",boxShadow:i===qteIdx?"0 0 14px rgba(255,217,102,0.5)":"none",transition:"all 0.2s"}}>{d}</span>))}</div>
-            {/* Touch / Click pad for arrow input */}
-            <div style={{display:"grid",gridTemplateColumns:"repeat(3, 56px)",gridTemplateRows:"repeat(3, 56px)",gap:6,justifyContent:"center",margin:"0 auto",width:"fit-content"}}>
-              <div /><button data-testid="qte-arrow-up" onClick={()=>qteInput("↑")} style={{borderRadius:10,border:"1.5px solid rgba(255,217,102,0.5)",background:"rgba(255,217,102,0.08)",color:"#ffd966",fontSize:24,fontWeight:900,cursor:"pointer",transition:"all 0.15s"}} onMouseDown={(e)=>{e.currentTarget.style.background="rgba(255,217,102,0.25)";}} onMouseUp={(e)=>{e.currentTarget.style.background="rgba(255,217,102,0.08)";}}>↑</button><div />
-              <button data-testid="qte-arrow-left" onClick={()=>qteInput("←")} style={{borderRadius:10,border:"1.5px solid rgba(255,217,102,0.5)",background:"rgba(255,217,102,0.08)",color:"#ffd966",fontSize:24,fontWeight:900,cursor:"pointer",transition:"all 0.15s"}} onMouseDown={(e)=>{e.currentTarget.style.background="rgba(255,217,102,0.25)";}} onMouseUp={(e)=>{e.currentTarget.style.background="rgba(255,217,102,0.08)";}}>←</button><div /><button data-testid="qte-arrow-right" onClick={()=>qteInput("→")} style={{borderRadius:10,border:"1.5px solid rgba(255,217,102,0.5)",background:"rgba(255,217,102,0.08)",color:"#ffd966",fontSize:24,fontWeight:900,cursor:"pointer",transition:"all 0.15s"}} onMouseDown={(e)=>{e.currentTarget.style.background="rgba(255,217,102,0.25)";}} onMouseUp={(e)=>{e.currentTarget.style.background="rgba(255,217,102,0.08)";}}>→</button>
-              <div /><button data-testid="qte-arrow-down" onClick={()=>qteInput("↓")} style={{borderRadius:10,border:"1.5px solid rgba(255,217,102,0.5)",background:"rgba(255,217,102,0.08)",color:"#ffd966",fontSize:24,fontWeight:900,cursor:"pointer",transition:"all 0.15s"}} onMouseDown={(e)=>{e.currentTarget.style.background="rgba(255,217,102,0.25)";}} onMouseUp={(e)=>{e.currentTarget.style.background="rgba(255,217,102,0.08)";}}>↓</button><div />
-            </div>
-          </div>}
-          {!qteActive&&lumenariPhase===3&&<div style={{width:"100%",maxWidth:420}}><p style={{fontSize:11,color:"rgba(200,160,100,0.6)",marginBottom:10,textAlign:"center",letterSpacing:"0.06em",fontWeight:600}}>STONE GOLEMS</p><div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>{golems.map((g,i)=>(<div key={g.id} onClick={g.hp>0?()=>attackGolem(i):undefined} style={{opacity:g.hp<=0?0.3:1,cursor:g.hp>0?"pointer":"default",padding:"12px",borderRadius:10,border:"1px solid rgba(160,120,80,0.4)",background:"rgba(80,60,40,0.25)",textAlign:"center"}}><p style={{fontSize:11,fontWeight:600,color:"#c8a070",marginBottom:6}}>Golem {i+1}</p><Bar val={Math.max(0,g.hp)} max={g.maxHp} color="#a8744c" h={5}/></div>))}</div></div>}
-          {!qteActive&&!combatResult&&<div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(ACT.length,3)},1fr)`,gap:10,width:"100%",maxWidth:480}}>
-            {ACT.map(a=>{const dis=(a.staminaCost&&stats.stamina<a.staminaCost)||(a.mpCost&&stats.mp<a.mpCost)||!canAct;return <button key={a.id} disabled={dis} onClick={()=>lumenAttack(a)} className="action-card" style={{borderColor:a.isSpell?"rgba(168,157,240,0.5)":"rgba(255,217,102,0.4)",background:a.isSpell?"rgba(168,157,240,0.12)":"rgba(255,217,102,0.06)",textAlign:"center"}}>
-              <p style={{fontWeight:800,fontSize:15,color:a.isSpell?"#a89df0":"#ffd966",marginBottom:6}}>{a.name}</p>
-              <div style={{display:"flex",gap:5,justifyContent:"center",flexWrap:"wrap"}}>{a.mpCost>0&&<Tag color="#a89df0">{a.mpCost} MP</Tag>}{a.staminaCost>0&&<Tag color="#3ec995">{a.staminaCost} Sta</Tag>}</div>
-            </button>;})}
-          </div>}
-          {!combatResult&&<p style={{fontSize:11,color:lumenCombatPhase==="player"?"rgba(255,217,102,0.5)":"rgba(232,92,58,0.5)",letterSpacing:"0.08em",fontWeight:700}}>{qteActive?"INPUT REQUIRED":lumenCombatPhase==="player"?"YOUR TURN":"LUMENARI ACTING"}</p>}
-          {combatResult==="lose"&&<div style={{textAlign:"center",padding:"22px",borderRadius:14,background:"rgba(184,58,42,0.15)",border:"1px solid #b83a2a",maxWidth:400}}><p style={{fontWeight:700,fontSize:16,color:"#e85c3a",marginBottom:12}}>The Lumenari overwhelms you.</p><Btn variant="danger" onClick={()=>{setStats(s=>({...s,hp:s.maxHp,mp:s.maxMp,stamina:s.maxStamina}));startLumenari();}}>Try again</Btn></div>}
-        </div>
-        <div style={{width:200,background:"rgba(0,0,0,0.55)",borderLeft:"1px solid rgba(255,217,102,0.18)",padding:"16px 14px",display:"flex",flexDirection:"column",gap:12,position:"relative",zIndex:2}}>
-          <div><p style={{fontSize:10,color:"rgba(255,217,102,0.45)",letterSpacing:"0.1em",fontWeight:700,marginBottom:10}}>STATS</p>{[{l:"HP",v:stats.hp,m:stats.maxHp+(cityLevel.walls*5),c:"#e85c3a"},{l:"MP",v:stats.mp,m:stats.maxMp+(cityLevel.pump*5),c:"#a89df0"},{l:"Sta",v:stats.stamina,m:stats.maxStamina,c:"#3ec995"}].map(b=>(<div key={b.l} style={{marginBottom:10}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.55)"}}>{b.l}</span><span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>{b.v}/{b.m}</span></div><Bar val={b.v} max={b.m} color={b.c} h={7}/></div>))}</div>
-          <div style={{borderTop:"1px solid rgba(255,217,102,0.12)",paddingTop:12}}><p style={{fontSize:10,color:"rgba(255,217,102,0.45)",letterSpacing:"0.1em",fontWeight:700,marginBottom:10}}>POTIONS</p>{potions.length===0?<p style={{fontSize:11,color:"rgba(255,255,255,0.25)"}}>None</p>:<div style={{display:"flex",flexDirection:"column",gap:6}}>{getStacks().map(p=>(<button key={p.id} onClick={()=>usePotion(p)} style={{padding:"7px 10px",borderRadius:6,border:"1px solid rgba(62,201,149,0.3)",background:"rgba(42,156,105,0.1)",color:"#3ec995",fontSize:11,fontWeight:600,cursor:"pointer",textAlign:"left"}}>{p.name} <span style={{opacity:0.6}}>x{p.count}</span></button>))}</div>}</div>
-          <div style={{borderTop:"1px solid rgba(255,217,102,0.12)",paddingTop:12,flex:1,display:"flex",flexDirection:"column"}}><p style={{fontSize:10,color:"rgba(255,217,102,0.45)",letterSpacing:"0.1em",fontWeight:700,marginBottom:8}}>LOG</p><div ref={logRef} style={{flex:1,overflowY:"auto",fontSize:10,lineHeight:1.7}}>{log.slice(-20).map(l=><div key={l.id} style={{color:LOG_C[l.type]||"rgba(200,192,248,0.4)",marginBottom:2}}>{l.msg}</div>)}</div></div>
-        </div>
+  if(screen==="lumenari_intro")return <Cinematic onDone={()=>setScreen("lumenari")} shots={[
+    {text:"Then the tide thins — and the sky cracks open.",bg:"radial-gradient(ellipse at 50% 20%, #5a4a20 0%, #0c0816 65%)",fx:["rays","motes"],color:"#ffe9a8",duration:5000,sfx:()=>SFX.lumen()},
+    {text:"Something drifts down through the light.",sub:"Tall. Smooth. Featureless. Cracks of gold pulse across it like a heartbeat.",bg:"radial-gradient(ellipse at 50% 30%, #6a5a30 0%, #100a1c 65%)",fx:["rays","motes","pulse"],color:"#fff4d0",duration:6000},
+    {text:"It is not angry. It is not cruel. It does not even seem to see you.",sub:"Rubble lifts around it without being touched. The air bends.",bg:"radial-gradient(ellipse at 50% 30%, #3a2a50 0%, #08040e 65%)",fx:["motes","fog"],color:"#d8ccff",duration:6000},
+    {text:"A core that grew past what it could hold. A Lumenari.",bg:"radial-gradient(circle at 50% 40%, #fff3c0 0%, #4a3a10 25%, #000 70%)",fx:["flash","rays","shake"],color:"#ffd966",duration:4200,sfx:()=>SFX.lumen()},
+  ]}/>;
+
+  if(screen==="lumenari")return <LumenariFight key={lumenKey} stats={stats} ctx={combatCtx()} actions={combatActions()} potions={getStacks()} onConsumePotion={consumePotion}
+    allies={allies} diff={diff} onPhase={setLumenariPhase} onWin={lumenWon}
+    onLose={(pl)=>{setStats(s=>({...s,hp:0}));setTimeout(()=>setScreen("lumenari_lost"),1200);}}/>;
+
+  if(screen==="lumenari_lost")return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:24,background:"radial-gradient(circle,#2a0808,#000 70%)"}}>
+    <Panel style={{maxWidth:480,textAlign:"center",borderColor:"#b83a2a"}}>
+      <h2 style={{color:"#e85c3a",marginBottom:8}}>The light swallows you.</h2>
+      <p>The Lumenari drifts on, unaware you were ever there.</p>
+      <div style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap",marginTop:16}}>
+        {!diff?.perma&&<Btn variant="danger" onClick={()=>{setStats(s=>({...s,hp:s.maxHp,mp:s.maxMp,stamina:s.maxStamina}));startLumenari();}}>Rise and try again</Btn>}
+        <Btn variant="ghost" onClick={()=>{if(diff?.perma)startNewGame();else returnToMenu();}}>{diff?.perma?"Permadeath — new life":"Main menu"}</Btn>
       </div>
-    </div>;
-  }
+    </Panel>
+  </div>;
+
+  if(screen==="lumenari_outro")return <Cinematic onDone={()=>{setShowVictory(true);setScreen("overworld");}} shots={[
+    {text:"The core splinters.",bg:"radial-gradient(circle at 50% 40%, #ffffff 0%, #ffd966 20%, #2a1a00 60%, #000 90%)",fx:["flash","shake","rays"],color:"#fff",duration:3600,sfx:()=>SFX.victory()},
+    {text:"Light pours out of it in a flood — and then, simply, stops.",bg:"radial-gradient(ellipse at 50% 40%, #4a3a20 0%, #0a0608 70%)",fx:["motes"],color:"#ffe9a8",duration:5200},
+    {text:"Where it hung, the air is thin and strange.",sub:"Nothing will grow here for a long time. But the city is still standing.",bg:"radial-gradient(ellipse at 50% 60%, #1a2030 0%, #05060a 70%)",fx:["ash","fog"],color:"#d0d8e8",duration:5600},
+    {text:"The Doomsday is over. For now.",sub:"Somewhere far below, the siphons start again.",bg:"radial-gradient(ellipse at 50% 100%, #1a0a2a 0%, #000 70%)",fx:["stars"],color:"#c9b8ff",duration:5600},
+  ]}/>;
 
   return null;
 }; // <-- THIS CLOSES renderGameScreen()

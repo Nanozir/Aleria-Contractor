@@ -61,32 +61,20 @@ export const DIFFS=[
   {id:"insanity",name:"Insanity",desc:"Three enemies, much harder. Permadeath. Defeat the Lumenari to unlock.",enemyAtk:1.5,goldMult:0.4,enemies:3,perma:true,hpMult:1.6,locked:true,unlockReq:1},
 ];
 
-export const MONSTERS=[
-  {id:"cur",name:"Mana-touched cur",star:1,desc:"A lean dog with luminous eyes.",hp:35,atk:7,def:1,reward:{xp:28,bronze:6}},
-  {id:"crawler",name:"Tunnel crawler",star:1,desc:"Six-limbed.",hp:50,atk:10,def:3,reward:{xp:40,bronze:9}},
-  {id:"wanderer",name:"Gaunt wanderer",star:2,desc:"Used to be human.",hp:65,atk:14,def:2,reward:{xp:55,bronze:14}},
-  {id:"brute",name:"Stone-backed brute",star:3,desc:"Hulking quadruped.",hp:100,atk:19,def:11,reward:{xp:90,bronze:28}},
-  {id:"veilstalker",name:"Veilstalker",star:3,desc:"Translucent, fast.",hp:80,atk:24,def:5,reward:{xp:105,bronze:35}},
-  {id:"mana_horror",name:"Mana horror",star:4,desc:"Corrupted mana given shape.",hp:140,atk:30,def:8,reward:{xp:160,bronze:60}},
-  {id:"deep_stalker",name:"Deep stalker",star:5,desc:"It shouldn't be on the surface.",hp:200,atk:40,def:15,reward:{xp:250,bronze:110}},
-];
-export const UW_MONSTERS=[
-  {id:"uw_fiend",name:"Mana fiend",star:3,desc:"Aggressive.",hp:110,atk:22,def:8,reward:{xp:80,bronze:22}},
-  {id:"uw_crusher",name:"Depth crusher",star:4,desc:"Enormous.",hp:160,atk:32,def:14,reward:{xp:140,bronze:48}},
-];
-export const M_ACT={cur:[{name:"Bite",dmg:[7,11]}],crawler:[{name:"Claw rake",dmg:[10,16]}],wanderer:[{name:"Claw",dmg:[12,18]}],brute:[{name:"Slam",dmg:[18,26]},{name:"Charge",dmg:[22,30]}],veilstalker:[{name:"Strike",dmg:[20,28]},{name:"Rend",dmg:[24,32]}],mana_horror:[{name:"Slam",dmg:[26,36]},{name:"Drain",dmg:[14,20],effect:"drain_mp"}],deep_stalker:[{name:"Rend",dmg:[36,48]}],uw_fiend:[{name:"Surge",dmg:[20,28]}],uw_crusher:[{name:"Slam",dmg:[30,42]}]};
+// Monsters now live in combat/monsters.js (movesets, telegraphs, traits).
+export { MONSTERS, UW_MONSTERS } from "./combat/monsters";
 
 export const SURFACE_SPELLS=[
   {id:"elem_theory",name:"Elemental theory",prereq:null,progress:0,learned:false,replaces:null,desc:"The foundation.",combatUse:null},
-  {id:"fire_1",name:"Fire — Lv.1",prereq:"elem_theory",progress:0,learned:false,replaces:null,desc:"Heat.",combatUse:{label:"Fire Lv.1",dmg:[18,26],mpCost:14}},
-  {id:"fire_2",name:"Fire — Lv.2",prereq:"fire_1",progress:0,learned:false,replaces:"fire_1",desc:"Greater output.",combatUse:{label:"Fire Lv.2",dmg:[30,42],mpCost:22}},
-  {id:"water_1",name:"Water — Lv.1",prereq:"elem_theory",progress:0,learned:false,replaces:null,desc:"Pressurized.",combatUse:{label:"Water Lv.1",dmg:[14,20],mpCost:10}},
+  {id:"fire_1",name:"Fire — Lv.1",prereq:"elem_theory",progress:0,learned:false,replaces:null,desc:"Heat.",combatUse:{label:"Fire Lv.1",dmg:[18,26],mpCost:14,effect:"burn",desc:"Sets the target burning."}},
+  {id:"fire_2",name:"Fire — Lv.2",prereq:"fire_1",progress:0,learned:false,replaces:"fire_1",desc:"Greater output.",combatUse:{label:"Fire Lv.2",dmg:[30,42],mpCost:22,effect:"burn",desc:"Intense flames. Burns."}},
+  {id:"water_1",name:"Water — Lv.1",prereq:"elem_theory",progress:0,learned:false,replaces:null,desc:"Pressurized.",combatUse:{label:"Water Lv.1",dmg:[14,20],mpCost:10,poise:3,desc:"Pressurized jet. Breaks poise."}},
 ];
 export const DEVIL_SPELLS=[
   {id:"elem_theory",name:"Elemental theory",prereq:null,progress:100,learned:true,replaces:null,desc:"Innate.",combatUse:null},
-  {id:"fire_1",name:"Fire — Lv.1",prereq:"elem_theory",progress:100,learned:true,replaces:null,desc:"Innate fire.",combatUse:{label:"Fire Lv.1",dmg:[18,26],mpCost:10}},
-  {id:"fire_2",name:"Hellfire — Lv.2",prereq:"fire_1",progress:0,learned:false,replaces:"fire_1",desc:"Intense demonic flames.",combatUse:{label:"Hellfire Lv.2",dmg:[35,50],mpCost:25}},
-  {id:"illusion_1",name:"Illusion — Lv.1",prereq:"elem_theory",progress:0,learned:false,replaces:null,desc:"Confuses.",combatUse:{label:"Illusion Lv.1",dmg:[0,0],mpCost:12,effect:"confuse",turns:1}},
+  {id:"fire_1",name:"Fire — Lv.1",prereq:"elem_theory",progress:100,learned:true,replaces:null,desc:"Innate fire.",combatUse:{label:"Fire Lv.1",dmg:[18,26],mpCost:10,effect:"burn",desc:"Innate heat, not an imitation. Burns."}},
+  {id:"fire_2",name:"Hellfire — Lv.2",prereq:"fire_1",progress:0,learned:false,replaces:"fire_1",desc:"Intense demonic flames.",combatUse:{label:"Hellfire Lv.2",dmg:[35,50],mpCost:25,effect:"burn",aoe:true,desc:"Real fire. Engulfs every enemy."}},
+  {id:"illusion_1",name:"Illusion — Lv.1",prereq:"elem_theory",progress:0,learned:false,replaces:null,desc:"Confuses.",combatUse:{label:"Illusion Lv.1",dmg:[0,0],mpCost:12,effect:"confuse",turns:2,desc:"The target may attack its allies."}},
 ];
 
 export const WEAPONS=[
@@ -145,22 +133,41 @@ export const SLEEP=[
 ];
 export const HOUSE_PRICE=8000;
 
+// poise: how much stagger damage the move deals. effect: stun | bleed | burn. armorPierce ignores DEF.
 export const ATTACKS_BY_RACE={
-  human:[{id:"strike",name:"Strike",dmg:[0,6],desc:"Direct attack."},{id:"heavy",name:"Heavy blow",dmg:[8,16],desc:"High damage. 20 stamina.",staminaCost:20}],
-  equar:[{id:"strike",name:"Strike",dmg:[0,6],desc:"Quick attack."},{id:"pierce",name:"Needle Pierce",dmg:[14,22],desc:"Ignore armor. 18 stamina.",staminaCost:18}],
+  human:[
+    {id:"strike",name:"Strike",dmg:[0,6],desc:"Direct attack."},
+    {id:"heavy",name:"Heavy blow",dmg:[8,16],desc:"Breaks poise. 20 stamina.",staminaCost:20,poise:4},
+    {id:"riposte",name:"Feint & cut",dmg:[4,10],desc:"Opens a bleeding wound. 14 stamina.",staminaCost:14,effect:"bleed"},
+  ],
+  equar:[
+    {id:"strike",name:"Strike",dmg:[0,6],desc:"Quick attack.",hits:1},
+    {id:"pierce",name:"Needle Pierce",dmg:[14,22],desc:"Ignores armor. 18 stamina.",staminaCost:18,armorPierce:true},
+    {id:"flurry",name:"Pocket flurry",dmg:[3,7],desc:"Three quick jabs. 16 stamina.",staminaCost:16,hits:3,poise:1},
+  ],
   tetrabrachian:[
     {id:"strike",name:"Strike",dmg:[0,6],desc:"Single-arm jab."},
-    {id:"quad_flurry",name:"Quad flurry",dmg:[16,24],desc:"All four arms.",staminaCost:25},
+    {id:"quad_flurry",name:"Quad flurry",dmg:[5,9],desc:"All four arms. 25 stamina.",staminaCost:25,hits:4,poise:1},
     {id:"whirlwind",name:"Whirlwind",dmg:[12,20],desc:"Hits ALL enemies. 35 stamina.",staminaCost:35,aoe:true},
-    {id:"power_strike",name:"Four-arm power strike",dmg:[22,34],desc:"Devastating. 35 stamina.",staminaCost:35},
-    {id:"crushing_grapple",name:"Crushing grapple",dmg:[12,18],desc:"Pin and crush. Stuns.",staminaCost:18,effect:"stun"},
+    {id:"power_strike",name:"Four-arm power strike",dmg:[22,34],desc:"Devastating. Huge stagger. 35 stamina.",staminaCost:35,poise:6},
+    {id:"crushing_grapple",name:"Crushing grapple",dmg:[12,18],desc:"Pin and crush. Stuns. 18 stamina.",staminaCost:18,effect:"stun"},
   ],
   tenebrim:[
     {id:"strike",name:"Strike",dmg:[2,8],desc:"Direct attack."},
-    {id:"heavy",name:"Heavy blow",dmg:[10,18],desc:"High damage.",staminaCost:20},
-    {id:"shadow_rend",name:"Shadow Rend",dmg:[18,28],desc:"Vicious tear. 22 stamina.",staminaCost:22},
+    {id:"heavy",name:"Heavy blow",dmg:[10,18],desc:"Breaks poise. 20 stamina.",staminaCost:20,poise:4},
+    {id:"shadow_rend",name:"Rending grip",dmg:[18,28],desc:"Tears flesh. Bleeds. 22 stamina.",staminaCost:22,effect:"bleed"},
   ],
-  devil:[{id:"strike",name:"Strike",dmg:[0,7],desc:"Direct attack."},{id:"hell_strike",name:"Hell Strike",dmg:[15,25],desc:"Demonic force. 20 stamina.",staminaCost:20}],
+  devil:[
+    {id:"strike",name:"Strike",dmg:[0,7],desc:"Direct attack."},
+    {id:"hell_strike",name:"Hell Strike",dmg:[15,25],desc:"Heat pours from your fist. Burns. 20 stamina.",staminaCost:20,effect:"burn"},
+  ],
 };
+
+// Universal tactical options available in every standard fight.
+export const TACTICS=[
+  {id:"guard",name:"Guard",desc:"Halve hits this round. Sweeps & heavy hits are cut to 30%. +8 stamina."},
+  {id:"evade",name:"Evade",desc:"+55% dodge this round. Cannot dodge sweeps.",staminaCost:10},
+  {id:"focus",name:"Focus",desc:"Recover 22 stamina and a little mana."},
+];
 
 export const LOG_C={info:"rgba(200,192,248,0.55)",dmg:"#e85c3a",heal:"#3ec995",sys:"rgba(230,225,255,0.9)",reward:"#e0a523",spell:"#a89df0",lumen:"#ffd966"};
