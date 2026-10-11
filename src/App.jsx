@@ -44,7 +44,6 @@ export default function App(){
   const [progress,setProgress]=useState({cleared:0});
   const [diff,setDiff]=useState(DIFFS[1]);
   const [origin,setOrigin]=useState(null);
-  const [tenebrimStart,setTenebrimStart]=useState(null);
   const [stats,setStats]=useState({hp:100,maxHp:100,mp:60,maxMp:60,stamina:80,maxStamina:80});
   const [xp,setXp]=useState(0);
   const [bronze,setBronze]=useState(80);
@@ -137,11 +136,6 @@ export default function App(){
     setVolumes(prev => ({ ...prev, [type]: parseFloat(val) }));
   };  
 
-// Tenebrim Slave
-  const [slaveTask,setSlaveTask]=useState(null);
-  const [slaveProgress,setSlaveProgress]=useState(0);
-  const [slaveDay,setSlaveDay]=useState(0);
-  const [escapeReady,setEscapeReady]=useState(false);
   
   // Crafting
   const [craftMats,setCraftMats]=useState({metal:0,herb:0});
@@ -368,7 +362,7 @@ export default function App(){
     // Tenebrim addition: wipe standalone Tenebrim run state when starting a new game.
     localStorage.removeItem("aleria_tenebrim_save");
     
-    setDiff(DIFFS[1]); setRace(null); setOrigin(null); setCls(null); setTenebrimStart(null);
+    setDiff(DIFFS[1]); setRace(null); setOrigin(null); setCls(null);
     setStats({hp:100,maxHp:100,mp:60,maxMp:60,stamina:80,maxStamina:80});
     setXp(0); setBronze(80); setTotalEarned(0);
     setWeapon(WEAPONS[0]); setWeapon2(WEAPONS[0]); setArmor(ARMORS[0]);
@@ -383,7 +377,6 @@ export default function App(){
     setEndgameWave(0); setAllies(0);
     setLumenariPhase(1); setDoomsdayTriggered(false);
     setSiphonNodes([]); setSiphonScore(0); setSiphonActive(false); setSiphonTime(30); setSiphonResult(null);
-    setSlaveTask(null); setSlaveProgress(0); setSlaveDay(0); setEscapeReady(false);
     setCraftMats({metal:0,herb:0}); setCityLevel({pump:0,walls:0}); setCraftedShop([]);
     setScreen("race");
   }
@@ -420,7 +413,7 @@ export default function App(){
     // FIX: Difficulty AFTER race choice now leads to next race-specific step
     setDiff(d);
     if (race?.id === "devil") { setSpells(DEVIL_SPELLS.map(s => ({ ...s }))); setScreen("devil_intro"); }
-    else if (race?.id === "tenebrim") { setScreen("ten_origin"); }
+    else if (race?.id === "tenebrim") { setCls({id:"wanderer",name:"Wanderer",org:"Self-trained"}); setScreen("tenebrim_survival"); }
     else if (race?.id === "elf") { setScreen("elf_scenario"); }
     else { setScreen("origin"); }
   }
@@ -453,46 +446,12 @@ export default function App(){
 
   function beginGame(){
     if (window.SFX && window.SFX.menuSelect) window.SFX.menuSelect();
-    if (race?.id === "tenebrim") { setScreen("tenebrim_survival"); addLog("You step into the wilds. Survival begins.", "sys"); } 
-    else { setScreen("overworld"); setTab("map"); addLog("You take your first steps.", "sys"); }
+    setScreen("overworld"); setTab("map"); addLog("You take your first steps.", "sys");
   }
 
   function beginUnderworld(){
     if (window.SFX && window.SFX.menuSelect) window.SFX.menuSelect();
     setScreen("underworld");setTab("map");addLog("Sector Three. Your shift begins.","sys");
-  }
-
-  function startSlaveWork(){
-    if (window.SFX && window.SFX.menuSelect) window.SFX.menuSelect();
-    const tasks=["Carry crates","Scrub floors","Haul water", "Break rocks"];
-    setSlaveTask(tasks[Math.floor(Math.random()*tasks.length)]);
-    setSlaveProgress(0);
-  }
-  
-  function doSlaveWork(){
-    if (window.SFX && window.SFX.menuSelect) window.SFX.menuSelect(); // Tactile click for working
-    const np=Math.min(100,slaveProgress+Math.floor(Math.random()*22)+18);
-    setSlaveProgress(np);
-    
-    if(np>=100){
-      if (window.SFX && window.SFX.reward) window.SFX.reward(); // Ping when the bar fills!
-      const nd=slaveDay+1;
-      setSlaveDay(nd);
-      setSlaveProgress(0);
-      
-      if(nd>=3){
-        setEscapeReady(true);
-        notify("Escape opportunity.","#c8911a");
-      } else {
-        startSlaveWork();
-      }
-    }
-  }
-  
-  function doEscape(){
-    if (window.SFX && window.SFX.menuSelect) window.SFX.menuSelect();
-    setCls({id:"wanderer",name:"Wanderer",org:"Self-trained"});
-    setScreen("intro_ten");
   }
 
   function acceptInvite(){setNobleInvite(false);setLeftUnderworld(true);setSpells(p=>p.map(s=>s.combatUse?{...s,combatUse:{...s.combatUse,mpCost:Math.round(s.combatUse.mpCost*1.6)}}:s));addLog("You accept. Surface mana dims your spells.","sys");setScreen("devil_class");}
@@ -857,7 +816,7 @@ export default function App(){
             
             {/* --- CONTINUE BUTTON (resume last save) --- */}
             {(() => {
-              const hasSave = !!localStorage.getItem("aleria_save_slot") || !!localStorage.getItem("aleria_elf_save");
+              const hasSave = !!localStorage.getItem("aleria_save_slot") || !!localStorage.getItem("aleria_elf_save") || !!localStorage.getItem("aleria_tenebrim_save");
               return hasSave ? (
                 <div 
                   data-testid="main-menu-continue-btn"
@@ -1125,94 +1084,6 @@ if (screen === "devil_scenario") {
             </div>
           ))}
         </div>
-      </div>
-    </div>
-  );
-
-  // --- NEW SCREEN: Tenebrim Origin Choice ---
-  if(screen==="ten_origin") return (
-    <div style={{minHeight: "100vh", fontFamily: "var(--font-sans)", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "2rem"}}>
-      <PastoralBG />
-      <div style={{position: "relative", zIndex: 10, width: "100%", maxWidth: 650}}>
-        <div style={{textAlign: "center", marginBottom: 40}}>
-          <Tag color="#a89df0" style={{marginBottom: 10}}>Tenebrim</Tag>
-          <h2 style={{fontSize: 42, fontWeight: 900, color: "#fff", textShadow: "0 0 20px rgba(255,255,255,0.5)", margin: "10px 0"}}>Choose your origin</h2>
-        </div>
-        <div style={{display: "flex", flexDirection: "column", gap: 16}}>
-          
-          <div onClick={() => { if(window.SFX && window.SFX.menuSelect) window.SFX.menuSelect(); setTenebrimStart("slave"); setScreen("ten_slave"); }} style={{ position: "relative", background: "linear-gradient(180deg, rgba(40,20,60,0.8) 0%, rgba(20,10,35,0.9) 100%)", border: "1px solid rgba(184, 58, 42, 0.3)", borderRadius: 12, padding: "24px", cursor: "pointer", boxShadow: "0 4px 20px rgba(0,0,0,0.5)", transition: "all 0.2s" }} onMouseOver={(e) => { e.currentTarget.style.transform = "scale(1.02)"; e.currentTarget.style.border = "1px solid rgba(184, 58, 42, 0.8)"; e.currentTarget.style.boxShadow = "0 0 25px rgba(184,58,42,0.2)"; }} onMouseOut={(e) => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.border = "1px solid rgba(184, 58, 42, 0.3)"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.5)"; }}>
-            <p style={{fontWeight:800,fontSize:20,color:"#fff",margin:"0 0 8px 0"}}>Slave in Elysandria</p>
-            <p style={{fontSize:14,color:"rgba(255,255,255,0.6)",margin:0,lineHeight:1.6}}>Sold before you understood. You must survive hard labor and find a window to escape.</p>
-          </div>
-          
-          <div onClick={() => { if(window.SFX && window.SFX.menuSelect) window.SFX.menuSelect(); setTenebrimStart("tribe"); setScreen("ten_tribe"); }} style={{ position: "relative", background: "linear-gradient(180deg, rgba(40,20,60,0.8) 0%, rgba(20,10,35,0.9) 100%)", border: "1px solid rgba(62, 201, 149, 0.3)", borderRadius: 12, padding: "24px", cursor: "pointer", boxShadow: "0 4px 20px rgba(0,0,0,0.5)", transition: "all 0.2s" }} onMouseOver={(e) => { e.currentTarget.style.transform = "scale(1.02)"; e.currentTarget.style.border = "1px solid rgba(62, 201, 149, 0.8)"; e.currentTarget.style.boxShadow = "0 0 25px rgba(62,201,149,0.2)"; }} onMouseOut={(e) => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.border = "1px solid rgba(62, 201, 149, 0.3)"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.5)"; }}>
-            <p style={{fontWeight:800,fontSize:20,color:"#fff",margin:"0 0 8px 0"}}>Free Tribe in Menfor</p>
-            <p style={{fontSize:14,color:"rgba(255,255,255,0.6)",margin:0,lineHeight:1.6}}>You grew up among your own in the forest encampment. You choose to walk away and wander.</p>
-          </div>
-
-        </div>
-        <div style={{textAlign: "center", marginTop: 40}}>
-          <button onClick={() => { if(window.SFX && window.SFX.menuBack) window.SFX.menuBack(); setScreen("race"); }} style={{background: "transparent", border: "none", color: "rgba(255,255,255,0.5)", fontSize: 14, cursor: "pointer", padding: "10px", transition: "color 0.2s"}} onMouseOver={(e) => e.target.style.color = "#fff"} onMouseOut={(e) => e.target.style.color = "rgba(255,255,255,0.5)"}>
-            ← Back
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-
-  if(screen==="ten_slave") return (
-    <div style={{minHeight: "100vh", fontFamily: "var(--font-sans)", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "2rem"}}>
-      <PastoralBG />
-      <div style={{position: "relative", zIndex: 10, width: "100%", maxWidth: 500}}>
-        <div style={{textAlign: "center", marginBottom: 40}}>
-          <Tag color="#b83a2a" style={{marginBottom: 10}}>Tenebrim · Slave</Tag>
-          <h2 style={{fontSize: 42, fontWeight: 900, color: "#fff", textShadow: "0 0 20px rgba(255,255,255,0.5)", margin: "10px 0"}}>Lower Estate</h2>
-          <p style={{fontSize: 16, color: "rgba(232,192,176,0.8)", lineHeight: 1.7}}>Sold before you understood. {escapeReady?"An opportunity has appeared.":""}</p>
-        </div>
-        
-        <div style={{display: "flex", flexDirection: "column", gap: 20}}>
-          {!slaveTask&&!escapeReady&&<Btn variant="danger" full onClick={startSlaveWork}>Begin labor</Btn>}
-          
-          {slaveTask&&!escapeReady&&<div style={{ background: "linear-gradient(180deg, rgba(40,20,60,0.8) 0%, rgba(20,10,35,0.9) 100%)", border: "1px solid rgba(184, 58, 42, 0.4)", borderRadius: 12, padding: "24px", boxShadow: "0 4px 20px rgba(0,0,0,0.5)" }}>
-            <p style={{fontSize:13, color: "rgba(255,255,255,0.5)", marginBottom:8, textTransform:"uppercase", letterSpacing:"0.1em", fontWeight:700}}>Day {slaveDay+1}/3</p>
-            <p style={{fontWeight:800, fontSize:22, color:"#fff", marginBottom:16}}>{slaveTask}</p>
-            <Bar val={slaveProgress} max={100} color="#b83a2a" h={12} />
-            <div style={{marginTop:24}}><Btn variant="danger" full onClick={doSlaveWork}>Work</Btn></div>
-          </div>}
-          
-          {escapeReady&&<div style={{ background: "linear-gradient(180deg, rgba(40,30,10,0.9) 0%, rgba(20,15,5,0.95) 100%)", border: "1px solid rgba(224, 165, 35, 0.6)", borderRadius: 12, padding: "24px", boxShadow: "0 0 30px rgba(224, 165, 35, 0.2)" }}>
-            <p style={{fontWeight:800, fontSize:22, color:"#e0a523", marginBottom:16, textAlign: "center"}}>Escape window</p>
-            <Btn variant="gold" full onClick={doEscape}>Run</Btn>
-          </div>}
-        </div>
-      </div>
-    </div>
-  );
-  
-  if(screen==="ten_tribe") return (
-    <div style={{minHeight: "100vh", fontFamily: "var(--font-sans)", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "2rem"}}>
-      <PastoralBG />
-      <div style={{position: "relative", zIndex: 10, width: "100%", maxWidth: 500}}>
-        <div style={{textAlign: "center", marginBottom: 40}}>
-          <Tag color="#3ec995" style={{marginBottom: 10}}>Tenebrim · Menfor Tribe</Tag>
-          <h2 style={{fontSize: 42, fontWeight: 900, color: "#fff", textShadow: "0 0 20px rgba(255,255,255,0.5)", margin: "10px 0"}}>Forest Encampment</h2>
-          <p style={{fontSize: 16, color: "rgba(192,232,208,0.8)", lineHeight: 1.7}}>You grew up among your own. You've decided to leave.</p>
-        </div>
-        <Btn variant="success" full onClick={()=>{if(window.SFX && window.SFX.menuSelect) window.SFX.menuSelect(); setCls({id:"wanderer",name:"Wanderer",org:"Self-trained"});setScreen("intro_ten");}}>Leave the tribe ↗</Btn>
-      </div>
-    </div>
-  );
-  
-  if(screen==="intro_ten") return (
-    <div style={{minHeight: "100vh", fontFamily: "var(--font-sans)", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "2rem"}}>
-      <PastoralBG />
-      <div style={{position: "relative", zIndex: 10, width: "100%", maxWidth: 600, textAlign: "center"}}>
-        <div style={{display:"flex", gap:8, justifyContent:"center", marginBottom:20}}>
-          <Tag color="#b83a2a">Tenebrim</Tag>
-          <Tag color="#e0a523">Wanderer</Tag>
-        </div>
-        <p style={{fontSize: 18, color: "rgba(255,255,255,0.8)", lineHeight: 1.7, marginBottom: 40}}>The wilds are quiet. You'll train alone. No guild.</p>
-        <Btn variant="primary" onClick={beginGame}>Begin</Btn>
       </div>
     </div>
   );

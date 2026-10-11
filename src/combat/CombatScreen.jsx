@@ -74,6 +74,7 @@ export default function CombatScreen({
     if (busy) return;
     if (a.staminaCost && battle.player.stamina < a.staminaCost) { SFX.warn?.(); return; }
     if (a.mpCost && battle.player.mp < a.mpCost) { SFX.warn?.(); return; }
+    if (a.furyCost && (battle.player.fury || 0) < a.furyCost) { SFX.warn?.(); return; }
     a.isSpell ? SFX.spell() : a.id === "guard" ? SFX.guard() : SFX.attack();
     setBattle(b => doPlayerAction(b, a, tgt?.uid, ctx));
   };
@@ -99,15 +100,16 @@ export default function CombatScreen({
   const p = battle.player;
   const highStar = Math.max(0, ...battle.enemies.map(e => e.star || 1));
   const groups = useMemo(() => ({
-    attack: actions.filter(a => !a.isSpell && !["guard", "evade", "focus"].includes(a.id)),
+    attack: actions.filter(a => !a.isSpell && !a.furyCost && !["guard", "evade", "focus"].includes(a.id)),
+    fury: actions.filter(a => a.furyCost),
     spell: actions.filter(a => a.isSpell),
     tactic: actions.filter(a => ["guard", "evade", "focus"].includes(a.id)),
   }), [actions]);
 
   const renderAction = (a) => {
     const idx = actions.indexOf(a) + 1;
-    const noRes = (a.staminaCost && p.stamina < a.staminaCost) || (a.mpCost && p.mp < a.mpCost);
-    const col = a.isSpell ? "#a89df0" : a.id === "guard" ? "#3ec995" : a.id === "evade" ? "#ff6bcb" : a.id === "focus" ? "#87cefa" : (a.staminaCost || 0) >= 20 ? "#e85c3a" : "#d4cbf8";
+    const noRes = (a.staminaCost && p.stamina < a.staminaCost) || (a.mpCost && p.mp < a.mpCost) || (a.furyCost && (p.fury || 0) < a.furyCost);
+    const col = a.furyCost ? "#ff4d4d" : a.isSpell ? "#a89df0" : a.id === "guard" ? "#3ec995" : a.id === "evade" ? "#ff6bcb" : a.id === "focus" ? "#87cefa" : (a.staminaCost || 0) >= 20 ? "#e85c3a" : "#d4cbf8";
     return <button key={a.id} data-testid={`combat-action-${a.id}`} disabled={busy || noRes} onClick={() => act(a)} className="action-card" style={{ borderColor: `${col}55`, padding: "12px 14px", minHeight: 84, textAlign: "left" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
         <span style={{ fontWeight: 800, fontSize: 14, color: col }}>{a.name}</span>
@@ -117,6 +119,7 @@ export default function CombatScreen({
       <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
         {a.dmg && a.dmg[1] > 0 && <Tag color="#d4cbf8">{a.dmg[0]}–{a.dmg[1]}</Tag>}
         {a.mpCost > 0 && <Tag color="#a89df0">{a.mpCost} MP</Tag>}
+        {a.furyCost > 0 && <Tag color="#ff4d4d">{a.furyCost} FURY</Tag>}
         {a.staminaCost > 0 && <Tag color="#3ec995">{a.staminaCost} STA</Tag>}
         {a.aoe && <Tag color="#ff8c00">All</Tag>}
         {a.hits > 1 && <Tag color="#a8740c">×{a.hits}</Tag>}
@@ -176,7 +179,7 @@ export default function CombatScreen({
             <span style={{ fontSize: 10, color: "rgba(200,192,248,0.5)", letterSpacing: "0.12em", fontWeight: 800 }}>YOU</span>
             {p.stance && <Tag color={p.stance === "guard" ? "#3ec995" : "#ff6bcb"} glow>{p.stance === "guard" ? "Guarding" : "Evading"}</Tag>}
           </div>
-          {[{ l: "HP", v: p.hp, m: p.maxHp, c: "#e85c3a" }, ...(p.maxMp > 0 ? [{ l: "MP", v: p.mp, m: p.maxMp, c: "#a89df0" }] : []), { l: "STA", v: p.stamina, m: p.maxStamina, c: "#3ec995" }].map(b => <div key={b.l} style={{ marginBottom: 7 }}>
+          {[{ l: "HP", v: p.hp, m: p.maxHp, c: "#e85c3a" }, ...(p.maxMp > 0 ? [{ l: "MP", v: p.mp, m: p.maxMp, c: "#a89df0" }] : []), { l: "STA", v: p.stamina, m: p.maxStamina, c: "#3ec995" }, ...(p.maxFury ? [{ l: "FURY", v: p.fury || 0, m: p.maxFury, c: "#ff4d4d" }] : [])].map(b => <div key={b.l} style={{ marginBottom: 7 }}>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 3 }}><span style={{ color: b.c, fontWeight: 800 }}>{b.l}</span><span style={{ color: "rgba(255,255,255,0.55)" }}>{Math.round(b.v)}/{b.m}</span></div>
             <Bar val={b.v} max={b.m} color={b.c} h={7} />
           </div>)}
@@ -195,7 +198,7 @@ export default function CombatScreen({
           <span>Keys 1–9 act · Tab switches target</span>
         </div>
         {busy ? <p style={{ fontSize: 12, color: "rgba(255,200,180,0.5)", letterSpacing: "0.1em", fontWeight: 700, padding: "18px 0" }}>{battle.phase === "stunned" ? "YOU ARE STUNNED…" : "ENEMIES ACTING…"}</p> : <>
-          {[["Attacks", groups.attack], ["Spells", groups.spell], ["Tactics", groups.tactic]].map(([label, list]) => list.length > 0 && <div key={label} style={{ marginBottom: 10 }}>
+          {[["Attacks", groups.attack], ["Fury", groups.fury], ["Spells", groups.spell], ["Tactics", groups.tactic]].map(([label, list]) => list.length > 0 && <div key={label} style={{ marginBottom: 10 }}>
             <p className="section-label">{label}</p>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(170px,1fr))", gap: 10 }}>{list.map(renderAction)}</div>
           </div>)}

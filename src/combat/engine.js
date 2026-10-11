@@ -28,7 +28,7 @@ export function makeEnemy(base, scale = {}) {
 
 export function createBattle({ enemies, player, allies = 0, coreless = false }) {
   const s = {
-    player: { ...player, statuses: {}, stance: null },
+    player: { ...player, statuses: { ...(player.statuses || {}) }, stance: null },
     enemies: enemies.map(e => (e.uid ? e : makeEnemy(e))),
     allies, coreless, round: 1, log: [], fx: [], over: null, lastWasSpell: false,
   };
@@ -90,8 +90,10 @@ export function doPlayerAction(state, action, targetUid, ctx) {
   if (s.over) return s;
   if (action.staminaCost && p.stamina < action.staminaCost) { pushLog(s, "Not enough stamina.", "dmg"); return s; }
   if (action.mpCost && p.mp < action.mpCost) { pushLog(s, "Not enough mana.", "dmg"); return s; }
+  if (action.furyCost && (p.fury || 0) < action.furyCost) { pushLog(s, "Not enough fury.", "dmg"); return s; }
   p.stamina -= action.staminaCost || 0;
   p.mp -= action.mpCost || 0;
+  if (action.furyCost) p.fury -= action.furyCost;
   p.stance = null;
   s.lastWasSpell = !!action.isSpell;
 
@@ -145,6 +147,7 @@ export function doPlayerAction(state, action, targetUid, ctx) {
       dmg = Math.max(1, Math.round(enemyDamageTaken(t, dmg)));
       t.hp = Math.max(0, t.hp - dmg);
       total += dmg;
+      if (p.maxFury) p.fury = Math.min(p.maxFury, (p.fury || 0) + 6);
       pushFx(s, t.uid, `${crit ? "✷" : ""}-${dmg}`, crit ? "#ffd966" : "#fff");
       // Poise / stagger
       if (!t.statuses.staggered && t.hp > 0) {
@@ -269,6 +272,12 @@ function executeMove(s, e, move, ctx, packMult) {
     else pushLog(s, `An ally takes ${e.name}'s ${move.name} for you.`, "info");
     return;
   }
+  // Pact-chains: a coreless body has nothing to buffer a binding — unless the pact has been broken before.
+  if (move.pact && p.pactImmune) {
+    pushLog(s, `${e.name}'s ${move.name} reaches for your soul — and finds nothing it can hold. You have broken a pact before.`, "heal");
+    pushFx(s, "player", "Unbound", "#3ec995");
+    return;
+  }
   const hits = move.hits || 1;
   let total = 0, dodged = 0;
   for (let h = 0; h < hits; h++) {
@@ -277,14 +286,16 @@ function executeMove(s, e, move, ctx, packMult) {
     if (has(e, "blindHunter") && p.stance === "guard") dodge += 60; // holding still
     if (Math.random() * 100 < dodge) { dodged++; continue; }
     let raw = e.atk * rnd(move.mult?.[0] ?? 0.9, move.mult?.[1] ?? 1.2) * packMult;
+    if (move.pact && s.coreless) raw *= 1.25;
     if (e.statuses.rally) raw *= 1.2;
     if (has(e, "enrage") && e.hp < e.maxHp * 0.35) raw *= 1.3;
     if (p.stance === "guard" && !move.pierce) raw *= (move.sweep || move.kind === "heavy") ? 0.3 : 0.5;
     const def = Math.max(0, ctx.def - (p.statuses.acid ? (p.statuses.acidPower || 6) : 0));
     const dmg = Math.max(1, Math.round(mitigate(raw, def)));
     p.hp = Math.max(0, p.hp - dmg); total += dmg;
-    if (move.kind === "drain" && move.drain) p.mp = Math.max(0, p.mp - move.drain);
-    if (move.status && p.hp > 0) applyPlayerStatus(s, move.status);
+    if (p.maxFury) p.fury = Math.min(p.maxFury, (p.fury || 0) + Math.round(dmg * 0.5));
+    if (move.kind === "drain" && move.drain && !s.coreless) p.mp = Math.max(0, p.mp - move.drain);
+    if (move.status && p.hp > 0) applyPlayerStatus(s, move.status, move.pact);
     if (p.hp <= 0) break;
   }
   if (total > 0) {
@@ -296,9 +307,10 @@ function executeMove(s, e, move, ctx, packMult) {
   }
 }
 
-function applyPlayerStatus(s, st) {
+function applyPlayerStatus(s, st, fromPact = false) {
   const p = s.player;
   if (st.type === "stun" && p.statuses.stunImmune) return;
+  if (p.immune?.includes(st.type) && !fromPact) return;
   p.statuses[st.type] = Math.max(p.statuses[st.type] || 0, st.turns);
   if (st.type === "bleed" || st.type === "burn") p.statuses[st.type + "Power"] = Math.max(p.statuses[st.type + "Power"] || 0, st.power || 4);
   if (st.type === "acid") p.statuses.acidPower = Math.max(p.statuses.acidPower || 0, st.power || 6);

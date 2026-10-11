@@ -1,712 +1,465 @@
+// TenebrimScenario.jsx — "Unbound": the Tenebrim campaign.
+// Two origins (slave in Elysandria / Emberhide tribe in Menfor) converge on Menfor, where the
+// Syndicate's slave fort Chainhold must be broken before its grip closes on every clan.
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Bar, Btn, Panel, Tag, Confetti } from "./UIComponents";
+import { SFX } from "./AudioEngine";
+import { TACTICS } from "./GameData";
+import CombatScreen from "./combat/CombatScreen";
+import Cinematic from "./cinematic/Cinematic";
+import { makeEnemy } from "./combat/engine";
+import { HERITAGE, REGIONS, CLANS, ROLES, WOUNDS, TECHNIQUES, WEAPONS, CAMP_BUILDINGS, TEN_ACTIONS, FINALE_ENDINGS } from "./tenebrim/data";
+import { EVENTS, BONDAGE_TASKS, BONDAGE_NIGHT } from "./tenebrim/events";
+import {
+  newGame, log, toast, clamp, pick, irnd, SEGS, META_UPGRADES, hasTech, heritageOf, weaponOf, regionOf, alliedClans,
+  combatCtx, battlePlayer, buildEnemies, applyCombatResult, afterCombat, advance, checkDeath,
+  forage, hunt, drawWater, rest, tend, riskyMeal, scout, travel, raidCaravan, foundCamp, build, craftWeapon, searchRuins, addFollower,
+} from "./tenebrim/logic";
 
-// Tenebrim addition: standalone scenario data and rules. Tenebrim does not use mana.
 const SAVE_KEY = "aleria_tenebrim_save";
 const META_KEY = "aleria_tenebrim_meta";
 
-const clamp = (value, min = 0, max = 100) => Math.max(min, Math.min(max, value));
-const roll = (min, max) => Math.floor(min + Math.random() * (max - min + 1));
+const CINEMATICS = {
+  slave: [
+    { text: "You were sold before you understood the word.", bg: "radial-gradient(ellipse at 50% 70%, #2a1410 0%, #070303 70%)", fx: ["ash"], color: "#e8c0b0", duration: 5200 },
+    { text: "The sigil on your wrist is a slave pact. It is anchored to your soul.", sub: "Other races have a core to buffer a binding. Tenebrim have nothing. When the master says move, your body moves.", bg: "radial-gradient(circle at 50% 45%, #5a1010 0%, #0c0303 65%)", fx: ["pulse", "vignette-red"], color: "#ff8a7a", duration: 7000 },
+    { text: "The Lower Estate, Elysandria. The labor never ends.", sub: "But you are watching. You are always watching.", bg: "radial-gradient(ellipse at 50% 30%, #2a2018 0%, #080605 70%)", fx: ["fog"], color: "#e0d0b8", duration: 5600 },
+  ],
+  tribe: [
+    { text: "Menfor does not forgive. That is why the clans teach early.", bg: "radial-gradient(ellipse at 50% 90%, #6a2a0a 0%, #120604 70%)", fx: ["embers"], color: "#ffc89a", duration: 5200 },
+    { text: "By ten, a Tenebrim child can hunt, fight, farm and survive alone.", sub: "If something happens to the adults, the child should be able to continue.", bg: "radial-gradient(ellipse at 50% 80%, #4a2010 0%, #0a0403 70%)", fx: ["embers"], color: "#ffd8b0", duration: 6200 },
+    { text: "You are Emberhide. Today, the elders read your markings.", bg: "radial-gradient(circle at 50% 50%, #7a3010 0%, #100503 65%)", fx: ["embers", "pulse"], color: "#ff9a5a", duration: 5000 },
+  ],
+  raid: [
+    { text: "Smoke.", bg: "radial-gradient(ellipse at 50% 80%, #3a1008 0%, #050202 70%)", fx: ["embers", "vignette-red"], color: "#ff8a6a", duration: 3000, sfx: () => SFX.roar() },
+    { text: "Chains that glow with sigils. Men who know exactly what they are doing.", sub: "One touch of a pact-chain and a coreless body stops obeying.", bg: "radial-gradient(ellipse at 50% 60%, #5a1a10 0%, #080302 70%)", fx: ["embers", "shake"], color: "#ffb0a0", duration: 5600 },
+    { text: "The Syndicate has come to the Emberhide.", bg: "radial-gradient(circle, #6a1a0a 0%, #000 70%)", fx: ["flash", "shake", "vignette-red"], color: "#ff6b4a", duration: 3600 },
+  ],
+  crossing: [
+    { text: "Nine days in the dark of an ore barge's hold.", bg: "radial-gradient(ellipse at 50% 50%, #0a1418 0%, #020405 70%)", fx: ["rain"], color: "#b8d0e0", duration: 4600 },
+    { text: "Then: black cliffs, white salt, and air that tastes of sulfur.", sub: "Menfor. You've never seen it. It smells like home anyway.", bg: "radial-gradient(ellipse at 50% 90%, #4a3020 0%, #0a0604 70%)", fx: ["ash"], color: "#f0d8c0", duration: 6000 },
+    { text: "You are free. Nobody here knows you. Some will call you a returned slave; some will call you Mourak.", sub: "Chainhold, the Syndicate's fort, squats on this same coast. You are not done with them.", bg: "radial-gradient(ellipse at 50% 70%, #2a1810 0%, #050302 70%)", fx: ["embers"], color: "#ffd0a0", duration: 7000 },
+  ],
+};
 
-const TECHNIQUES = [
-  { id: "endurePain", name: "Endure Pain", description: "Pain penalties reduced by 30%.", unlockCondition: "Survive severe injuries 10 times", effect: "pain_resist", req: { severeInjuries: 10 } },
-  { id: "predatorReflex", name: "Predator Reflex", description: "Small slow-motion window in combat.", unlockCondition: "Perfect dodge 50 attacks", effect: "reflex_window", req: { perfectDodges: 50 } },
-  { id: "lastStand", name: "Last Stand", description: "+20% damage while below 10% health.", unlockCondition: "Win battles below 10% HP five times", effect: "critical_damage", req: { criticalWins: 5 } },
-  { id: "ironStomach", name: "Iron Stomach", description: "Poison and dangerous food penalties are reduced.", unlockCondition: "Eat dangerous food without dying", effect: "poison_resist", req: { dangerousMeals: 3 } },
-  { id: "clanHunter", name: "Clan Hunter", description: "Tracking bonus during hunts and travel.", unlockCondition: "Kill 100 creatures", effect: "tracking_bonus", req: { kills: 100 } },
-  { id: "unbreakable", name: "Unbreakable", description: "Physical resistance increases after recovered fractures.", unlockCondition: "Recover from broken limbs three times", effect: "physical_resist", req: { brokenRecoveries: 3 } }
-];
+const LOGC = { info: "rgba(255,240,220,0.62)", dmg: "#e85c3a", heal: "#3ec995", sys: "#f0e6d8", reward: "#ffd966", lumen: "#ffb347" };
 
-const INJURIES = [
-  { id: "brokenArm", name: "Broken arm", effect: "Reduced attack power." },
-  { id: "brokenRibs", name: "Broken ribs", effect: "Higher pain from heavy hits." },
-  { id: "concussion", name: "Concussion", effect: "Reduced hit chance and visual distortion." },
-  { id: "bleeding", name: "Bleeding", effect: "Health loss over time." },
-  { id: "legInjury", name: "Leg injury", effect: "Movement and travel penalties." },
-  { id: "internalInjury", name: "Internal injury", effect: "Condition decays faster." }
-];
-
-const REGIONS = [
-  { id: "bone", name: "Bone Flats", danger: 1, resources: ["bone", "hide", "dry grass"], weather: "Hot white wind", nodes: ["Bleached Trail", "Marrow Den", "Salted Hollow", "Scavenger Ring", "Old Firepit"], boss: "Ivory Gorer" },
-  { id: "storm", name: "Red Storm Canyon", danger: 2, resources: ["iron dust", "red crystal", "old weapons"], weather: "Dust storms", nodes: ["Collapsed Camp", "Dust Cave", "Old Battlefield", "Hunter Grave", "Crystal Pit"], boss: "Storm-Maw Ravager" },
-  { id: "ash", name: "Ash Fields", danger: 2, resources: ["charcoal", "ash root", "scrap"], weather: "Ash rain", nodes: ["Charred Farm", "Buried Shrine", "Smoke Wallow", "Cinder Creek", "Black Orchard"], boss: "Ash-Hide Matriarch" },
-  { id: "deadForest", name: "Dead Forest", danger: 3, resources: ["herbs", "hardwood", "venom sacs"], weather: "Still fog", nodes: ["Hollow Grove", "Snare Paths", "Rot Cave", "Moonless Pond", "Thorn Nest"], boss: "Rootless Ancient" },
-  { id: "coast", name: "Black Stone Coast", danger: 3, resources: ["salt", "shell iron", "fish"], weather: "Cold black rain", nodes: ["Tide Graves", "Basalt Shelf", "Wrecked Barge", "Salt Cave", "Siren Rocks"], boss: "Basalt Leviathan" },
-  { id: "ruins", name: "Broken Clan Ruins", danger: 4, resources: ["relics", "stone", "medicine"], weather: "Unsettled echoes", nodes: ["Oath Hall", "Collapsed Longhouse", "Ancestor Pit", "Banner Field", "Hidden Granary"], boss: "Oathbreaker Chief" },
-  { id: "whisper", name: "Whispering Valley", danger: 4, resources: ["rare herbs", "spirit stones", "tracks"], weather: "Voices in mist", nodes: ["Echo Pass", "Silent Brook", "Watcher Cairn", "Veil Camp", "No-Sound Cave"], boss: "The Whispering Mourak" },
-  { id: "monarch", name: "Ruined Monarch Territory", danger: 5, resources: ["relics", "royal steel", "clan banners"], weather: "Mana pressure", nodes: ["Broken Throne", "Royal Hunt Grounds", "Crown Bridge", "Siege Fields", "Monarch Tomb"], boss: "Fallen Grand Monarch" }
-];
-
-const SURVIVAL_EVENTS = [
-  {
-    id: "dustStorm",
-    title: "Dust Storm",
-    description: "The red wall rises over the land. Mana lamps would cut through it. You have cloth, instinct, and stubborn lungs.",
-    choices: [
-      { label: "Hide", result: "lose time, recover condition", apply: s => ({ condition: 6, stamina: 8, hunger: -5, log: "You bury yourself behind stone until the storm passes." }) },
-      { label: "Push forward", result: "resource gain, small injury chance", apply: s => ({ materials: roll(4, 9), condition: -8, injuryChance: 0.18, log: "You force a path through the storm and salvage buried scrap." }) },
-      { label: "Follow tracks", result: "rare loot chance or danger encounter", apply: s => Math.random() < 0.55 ? ({ relics: 1, condition: -10, log: "The tracks lead to a half-buried clan marker." }) : ({ encounter: true, condition: -6, log: "The tracks were fresh. Too fresh." }) }
-    ]
-  },
-  {
-    id: "traveler",
-    title: "Starving Traveler",
-    description: "A half-dead stranger asks for food. Their hand shakes around a broken spear.",
-    choices: [
-      { label: "Give food", result: "+Honor, -Food", apply: s => ({ food: -12, honor: 5, log: "You leave food and a warning about the next valley." }) },
-      { label: "Ignore", result: "No immediate effect", apply: s => ({ log: "You keep walking. Menfor remembers silence too." }) },
-      { label: "Recruit", result: "+Population, higher food consumption", apply: s => ({ population: 1, honor: 2, legacy: 1, food: -8, log: "They join your fire and owe you their breath." }) }
-    ]
-  },
-  {
-    id: "aid",
-    title: "A Clan Requests Aid",
-    description: "A small clan sends a runner. Their hunters have not returned.",
-    choices: [
-      { label: "Help", result: "+Honor, possible battle", apply: s => ({ honor: 8, strength: 2, encounterChance: 0.4, log: "You answer the call without asking price." }) },
-      { label: "Demand payment", result: "+Resources", apply: s => ({ materials: 14, honor: -2, log: "They pay in tools and resentment." }) },
-      { label: "Ignore", result: "Possible future consequences", apply: s => ({ honor: -5, legacy: -1, log: "Their messenger stops looking at you as a person." }) }
-    ]
-  },
-  {
-    id: "challenge",
-    title: "A Clan Challenges Your Leadership",
-    description: "A rival leader names you wanderer, not monarch. Their warriors wait to see whether you answer.",
-    choices: [
-      { label: "Fight leader", result: "+Strength, injury risk", apply: s => ({ strength: 8, condition: -8, injuryChance: 0.25, log: "The duel is ugly, direct, and remembered." }) },
-      { label: "Negotiate", result: "+Honor, slower legacy", apply: s => ({ honor: 5, legacy: 2, log: "You make room at the fire before blades come out." }) },
-      { label: "Accept alliance", result: "+Population, +Legacy", apply: s => ({ population: 3, legacy: 5, food: -15, log: "Two banners hang over one camp." }) }
-    ]
-  }
-];
-
-const ENEMIES = [
-  { name: "Bone Flats Wretch", hp: 55, atk: 9, evasion: 6, reward: 7 },
-  { name: "Red Canyon Stalker", hp: 78, atk: 13, evasion: 10, reward: 10 },
-  { name: "Ash-Hide Brute", hp: 105, atk: 17, evasion: 5, reward: 14 },
-  { name: "Dead Forest Ambusher", hp: 90, atk: 18, evasion: 15, reward: 15 },
-  { name: "Clan Ruin Duelist", hp: 130, atk: 22, evasion: 12, reward: 22 },
-  { name: "Monarch Remnant", hp: 190, atk: 28, evasion: 14, reward: 38 }
-];
-
-const META_UPGRADES = [
-  { id: "clanMemory", name: "Clan Memory", cost: 3, desc: "+5 starting food." },
-  { id: "hunterTradition", name: "Hunter Tradition", cost: 4, desc: "+5 tracking." },
-  { id: "survivalKnowledge", name: "Survival Knowledge", cost: 5, desc: "+10 starting condition." },
-  { id: "ancientWarrior", name: "Ancient Warrior Training", cost: 5, desc: "+10 starting stamina." }
-];
+function loadSave() {
+  try { const s = JSON.parse(localStorage.getItem(SAVE_KEY) || "null"); if (s && s.v === 2) return { ...s, toasts: [] }; } catch (e) {}
+  return null;
+}
 
 export default function TenebrimScenario({ setScreen, notify, stats, setStats, diff, exportSave }) {
-  const logRef = useRef(null);
-  const [phase, setPhase] = useState("map");
-  const [tab, setTab] = useState("map");
-  const [day, setDay] = useState(1);
-  const [health, setHealth] = useState(stats?.hp || 125);
-  const [maxHealth, setMaxHealth] = useState(stats?.maxHp || 125);
-  const [stamina, setStamina] = useState(90);
-  const [maxStamina, setMaxStamina] = useState(90);
-  // Tenebrim addition: Condition replaces mana as the central body-state resource.
-  const [condition, setCondition] = useState(100);
-  const [pain, setPain] = useState(0);
-  const [hunger, setHunger] = useState(70);
-  const [resources, setResources] = useState({ food: 20, materials: 12, medicine: 2, relics: 0 });
-  const [clan, setClan] = useState({ strength: 0, honor: 0, legacy: 0, population: 1 });
-  const [injuries, setInjuries] = useState([]);
-  const [unlockedTechniques, setUnlockedTechniques] = useState([]);
-  const [counters, setCounters] = useState({ severeInjuries: 0, perfectDodges: 0, criticalWins: 0, dangerousMeals: 0, kills: 0, brokenRecoveries: 0 });
-  const [knownRegions, setKnownRegions] = useState(["bone"]);
-  const [visitedNodes, setVisitedNodes] = useState({ bone: ["Bleached Trail"] });
-  const [currentRegion, setCurrentRegion] = useState("bone");
-  const [activeEvent, setActiveEvent] = useState(null);
-  const [combat, setCombat] = useState(null);
-  const [combatLog, setCombatLog] = useState([]);
-  const [legacyTitle, setLegacyTitle] = useState(null);
-  const [ending, setEnding] = useState(null);
-  const [echoes, setEchoes] = useState(0);
-  const [metaUpgrades, setMetaUpgrades] = useState({});
   const isMetaDisabled = diff?.id === "hard" || diff?.id === "insanity";
+  const [meta, setMeta] = useState(() => { try { return JSON.parse(localStorage.getItem(META_KEY) || "{}"); } catch (e) { return {}; } });
+  const [g, setG] = useState(() => loadSave() || newGame());
+  const [tab, setTab] = useState("region");
+  const logRef = useRef(null);
 
-  const learned = useMemo(() => TECHNIQUES.filter(t => unlockedTechniques.includes(t.id)), [unlockedTechniques]);
-  const current = REGIONS.find(r => r.id === currentRegion) || REGIONS[0];
-  const conditionBand = condition >= 90 ? "Peak" : condition >= 70 ? "Stable" : condition >= 40 ? "Worn" : condition >= 20 ? "Damaged" : "Collapsing";
-  const conditionBonus = condition >= 90 ? 5 : condition >= 70 ? 0 : condition >= 40 ? -4 : condition >= 20 ? -10 : -18;
-  const painPenalty = Math.floor((pain * (unlockedTechniques.includes("endurePain") ? 0.7 : 1)) / 10);
-  const trackingBonus = unlockedTechniques.includes("clanHunter") ? 8 : 0;
+  // Mutate a clone of the state with any logic function.
+  const up = (fn, ...args) => setG(prev => {
+    const n = structuredClone(prev);
+    fn(n, ...args);
+    checkDeath(n, n.dead?.reason || "Your body gave out.");
+    return n;
+  });
 
-  const addLog = (msg, type = "info") => setCombatLog(prev => [...prev.slice(-60), { msg, type, id: Date.now() + Math.random() }]);
-  const patchResources = patch => setResources(r => ({ ...r, ...Object.fromEntries(Object.entries(patch).map(([k, v]) => [k, Math.max(0, (r[k] || 0) + v)])) }));
-  const patchClan = patch => setClan(c => ({ ...c, ...Object.fromEntries(Object.entries(patch).map(([k, v]) => [k, Math.max(k === "honor" || k === "legacy" ? -100 : 0, (c[k] || 0) + v)])) }));
-  const hasTechnique = id => unlockedTechniques.includes(id);
-
+  // Persist + sync HP to the main game
   useEffect(() => {
-    try {
-      const meta = JSON.parse(localStorage.getItem(META_KEY) || "{}");
-      setEchoes(meta.echoes || 0);
-      setMetaUpgrades(meta.upgrades || {});
+    const { toasts, ...rest } = g;
+    try { localStorage.setItem(SAVE_KEY, JSON.stringify(rest)); } catch (e) {}
+    setStats?.(s => ({ ...s, hp: g.hp, maxHp: g.maxHp, mp: 0, maxMp: 0, stamina: g.stamina, maxStamina: g.maxStamina }));
+  }, [g]);
+  useEffect(() => {
+    if (g.toasts?.length) { g.toasts.forEach(t => notify?.(t.msg, t.color)); setG(p => ({ ...p, toasts: [] })); }
+  }, [g.toasts]);
+  useEffect(() => { if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight; }, [g.log]);
+
+  // Echoes on death / ending (meta progression on Easy/Normal only)
+  const rewarded = useRef(false);
+  useEffect(() => {
+    if ((g.dead || g.ending) && !rewarded.current) {
+      rewarded.current = true;
       if (!isMetaDisabled) {
-        if (meta.upgrades?.clanMemory) patchResources({ food: 5 });
-        if (meta.upgrades?.survivalKnowledge) setCondition(c => clamp(c + 10));
-        if (meta.upgrades?.ancientWarrior) {
-          setMaxStamina(s => s + 10);
-          setStamina(s => s + 10);
-        }
+        const gained = Math.max(1, Math.floor(g.legacy / 8) + (g.ending && g.ending !== "chaintide" ? 4 : 0));
+        const next = { ...meta, echoes: (meta.echoes || 0) + gained };
+        setMeta(next); localStorage.setItem(META_KEY, JSON.stringify(next));
       }
-    } catch (e) {}
-    try {
-      const saved = JSON.parse(localStorage.getItem(SAVE_KEY) || "{}");
-      if (!saved || !saved.day) return;
-      setPhase(saved.phase || "map"); setTab(saved.tab || "map"); setDay(saved.day || 1);
-      setHealth(saved.health ?? 125); setMaxHealth(saved.maxHealth ?? 125); setStamina(saved.stamina ?? 90); setMaxStamina(saved.maxStamina ?? 90);
-      setCondition(saved.condition ?? 100); setPain(saved.pain ?? 0); setHunger(saved.hunger ?? 70);
-      setResources(saved.resources || { food: 20, materials: 12, medicine: 2, relics: 0 });
-      setClan(saved.clan || { strength: 0, honor: 0, legacy: 0, population: 1 });
-      setInjuries(saved.injuries || []); setUnlockedTechniques(saved.unlockedTechniques || []);
-      setCounters(saved.counters || { severeInjuries: 0, perfectDodges: 0, criticalWins: 0, dangerousMeals: 0, kills: 0, brokenRecoveries: 0 });
-      setKnownRegions(saved.knownRegions || ["bone"]); setVisitedNodes(saved.visitedNodes || { bone: ["Bleached Trail"] });
-      setCurrentRegion(saved.currentRegion || "bone"); setCombatLog(saved.combatLog || []);
-    } catch (e) {}
-  }, []);
+      localStorage.removeItem(SAVE_KEY);
+      if (g.ending && g.ending !== "chaintide") SFX.victory(); else SFX.defeat();
+    }
+  }, [g.dead, g.ending]);
 
-  useEffect(() => {
-    if (phase === "dead" || phase === "ending") return;
-    const data = { phase, tab, day, health, maxHealth, stamina, maxStamina, condition, pain, hunger, resources, clan, injuries, unlockedTechniques, counters, knownRegions, visitedNodes, currentRegion, combatLog };
-    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
-    setStats?.(s => ({ ...s, hp: health, maxHp: maxHealth, mp: 0, maxMp: 0, stamina, maxStamina }));
-  }, [phase, tab, day, health, maxHealth, stamina, maxStamina, condition, pain, hunger, resources, clan, injuries, unlockedTechniques, counters, knownRegions, visitedNodes, currentRegion, combatLog]);
-
-  useEffect(() => {
-    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
-  }, [combatLog]);
-
-  useEffect(() => {
-    setUnlockedTechniques(prev => {
-      const next = [...prev];
-      TECHNIQUES.forEach(t => {
-        const key = Object.keys(t.req)[0];
-        if (!next.includes(t.id) && (counters[key] || 0) >= t.req[key]) {
-          next.push(t.id);
-          notify?.(`Technique unlocked: ${t.name}`, "#e0a523");
-          addLog(`Technique unlocked: ${t.name}.`, "reward");
-        }
-      });
-      return next;
-    });
-  }, [counters]);
-
-  useEffect(() => {
-    if (!injuries.includes("bleeding") || phase === "dead") return;
-    const t = setInterval(() => {
-      setHealth(h => {
-        const next = h - 3;
-        if (next <= 0) handleDeath("Blood loss ended the journey.");
-        return Math.max(0, next);
-      });
-      setCondition(c => clamp(c - 2));
-    }, 5000);
-    return () => clearInterval(t);
-  }, [injuries, phase]);
-
-  function addInjury(forcedId) {
-    const injury = INJURIES.find(i => i.id === forcedId) || INJURIES[Math.floor(Math.random() * INJURIES.length)];
-    setInjuries(prev => prev.includes(injury.id) ? prev : [...prev, injury.id]);
-    setPain(p => clamp(p + 16));
-    setCondition(c => clamp(c - 12));
-    setCounters(c => ({ ...c, severeInjuries: c.severeInjuries + 1, brokenRecoveries: c.brokenRecoveries + (injury.id === "brokenArm" || injury.id === "legInjury" ? 1 : 0) }));
-    addLog(`${injury.name}: ${injury.effect}`, "dmg");
-  }
-
-  function applyOutcome(outcome) {
-    if (outcome.food) patchResources({ food: outcome.food });
-    if (outcome.materials) patchResources({ materials: outcome.materials });
-    if (outcome.medicine) patchResources({ medicine: outcome.medicine });
-    if (outcome.relics) patchResources({ relics: outcome.relics });
-    if (outcome.condition) setCondition(c => clamp(c + outcome.condition));
-    if (outcome.stamina) setStamina(s => clamp(s + outcome.stamina, 0, maxStamina));
-    if (outcome.hunger) setHunger(h => clamp(h + outcome.hunger));
-    if (outcome.strength || outcome.honor || outcome.legacy || outcome.population) patchClan({ strength: outcome.strength || 0, honor: outcome.honor || 0, legacy: outcome.legacy || 0, population: outcome.population || 0 });
-    if (outcome.log) addLog(outcome.log, outcome.condition < 0 ? "dmg" : "info");
-    if (outcome.injuryChance && Math.random() < outcome.injuryChance) addInjury();
-    if (outcome.encounter || (outcome.encounterChance && Math.random() < outcome.encounterChance)) startCombat(current.danger);
-  }
-
-  function advanceDay(cost = 1) {
-    setDay(d => d + cost);
-    setHunger(h => clamp(h - 7 * cost - Math.max(0, clan.population - 1)));
-    setStamina(s => clamp(s + (condition < 70 ? 10 : 18), 0, maxStamina));
-    if (hunger < 20) setCondition(c => clamp(c - 6));
-    if (injuries.includes("internalInjury")) setCondition(c => clamp(c - 3));
-  }
-
-  function travel(regionId) {
-    const region = REGIONS.find(r => r.id === regionId);
-    if (!region) return;
-    const travelCost = 6 + region.danger * 4 + (injuries.includes("legInjury") ? 8 : 0);
-    if (stamina < travelCost) return notify?.("Too exhausted to travel.", "#e85c3a");
-    setCurrentRegion(region.id);
-    setKnownRegions(prev => prev.includes(region.id) ? prev : [...prev, region.id]);
-    setStamina(s => clamp(s - travelCost, 0, maxStamina));
-    setCondition(c => clamp(c - region.danger));
-    advanceDay(Math.max(1, Math.ceil(region.danger / 2)));
-    revealNode(region.id);
-    addLog(`Traveled to ${region.name}. ${region.weather} presses against you.`, "sys");
-    const eventChance = 0.25 + region.danger * 0.05;
-    if (Math.random() < eventChance) setActiveEvent(SURVIVAL_EVENTS[Math.floor(Math.random() * SURVIVAL_EVENTS.length)]);
-    else if (Math.random() < 0.18 + region.danger * 0.04) startCombat(region.danger);
-  }
-
-  function revealNode(regionId = currentRegion) {
-    const region = REGIONS.find(r => r.id === regionId);
-    const known = visitedNodes[regionId] || [];
-    const hidden = region.nodes.filter(n => !known.includes(n));
-    if (hidden.length === 0) return;
-    const next = hidden[Math.floor(Math.random() * hidden.length)];
-    setVisitedNodes(prev => ({ ...prev, [regionId]: [...(prev[regionId] || []), next] }));
-  }
-
-  function riskAction(node, tier) {
-    const cfg = {
-      safe: { label: "Safe scavenge", reward: [2, 5], risk: 0.05, stamina: 8, condition: -2 },
-      deep: { label: "Deep search", reward: [6, 12], risk: 0.22, stamina: 16, condition: -6 },
-      forbidden: { label: "Forbidden search", reward: [1, 2], relic: true, risk: 0.42, stamina: 24, condition: -12 }
-    }[tier];
-    if (stamina < cfg.stamina) return notify?.("Not enough stamina.", "#e85c3a");
-    setStamina(s => clamp(s - cfg.stamina, 0, maxStamina));
-    setCondition(c => clamp(c + cfg.condition));
-    setHunger(h => clamp(h - 4));
-    if (cfg.relic) patchResources({ relics: roll(cfg.reward[0], cfg.reward[1]), materials: roll(2, 5) });
-    else patchResources({ materials: roll(cfg.reward[0], cfg.reward[1]) });
-    patchClan({ legacy: tier === "forbidden" ? 2 : 0 });
-    addLog(`${cfg.label} at ${node}.`, "reward");
-    if (Math.random() < cfg.risk) {
-      if (Math.random() < 0.5) addInjury();
-      else startCombat(current.danger + (tier === "forbidden" ? 2 : 0));
-    } else if (Math.random() < 0.35) revealNode();
-    advanceDay(1);
-  }
-
-  function hunt(type) {
-    const cfg = {
-      small: { name: "Small prey", risk: 0.08, food: [5, 10], stamina: 8, strength: 1 },
-      large: { name: "Large prey", risk: 0.25, food: [15, 26], stamina: 18, strength: 3 },
-      alpha: { name: "Alpha hunt", risk: 0.48, food: [28, 44], stamina: 30, strength: 8 }
-    }[type];
-    if (stamina < cfg.stamina) return notify?.("Your body refuses the hunt.", "#e85c3a");
-    const success = Math.random() < 0.62 + trackingBonus / 100 + conditionBonus / 100;
-    setStamina(s => clamp(s - cfg.stamina, 0, maxStamina));
-    setCondition(c => clamp(c - Math.ceil(cfg.stamina / 8)));
-    if (success) {
-      const foodGain = roll(cfg.food[0], cfg.food[1]);
-      patchResources({ food: foodGain });
-      patchClan({ strength: cfg.strength });
-      setCounters(c => ({ ...c, kills: c.kills + (type === "alpha" ? 3 : 1) }));
-      addLog(`${cfg.name} succeeded. +${foodGain} food.`, "reward");
+  function begin(origin) {
+    SFX.menuSelect();
+    const n = newGame();
+    n.origin = origin;
+    n.meta = isMetaDisabled ? {} : (meta.upgrades || {});
+    if (n.meta.clanMemory) { n.food += 6; n.water += 4; }
+    if (n.meta.hunterTradition) n.weapon = "bonespear";
+    if (n.meta.survivalKnowledge) { n.herbs += 3; n.maxHp += 15; n.hp += 15; }
+    if (origin === "slave") {
+      n.act = "bondage"; n.cinematic = "slave";
+      n.bondage = { day: 1, phase: "bloodline", strain: 0, suspicion: 10, info: 0, contacts: 0, stash: 0, ledger: false, ledgerKnown: false, caught: 0 };
+      n.event = { id: "bloodline" };
     } else {
-      patchClan({ strength: -1 });
-      addLog(`${cfg.name} failed. The tracks vanish into hostile land.`, "dmg");
+      n.act = "tribe"; n.cinematic = "tribe"; n.sibling = pick(["Kaela", "Varo", "Imre", "Tesh", "Morra"]);
+      n.event = { id: "marking" };
     }
-    if (Math.random() < cfg.risk) startCombat(current.danger + (type === "alpha" ? 2 : 0));
-    advanceDay(1);
+    log(n, origin === "slave" ? "The Lower Estate. Day one of the rest of your life." : "The Emberhide camp, Ashveil Basin.", "sys");
+    rewarded.current = false;
+    setG(n); setTab("region");
   }
 
-  function rest(kind) {
-    const cfg = {
-      sleep: { food: -8, hp: 22, stamina: 999, condition: 18, pain: -12, msg: "Sleep pulls you back from the edge." },
-      eat: { food: -10, hp: 4, stamina: 8, condition: 8, pain: -2, msg: "Food makes the world less sharp." },
-      medicine: { medicine: -1, hp: 12, stamina: 4, condition: 12, pain: -24, msg: "Medicine quiets the body's alarm." },
-      campfire: { materials: -4, hp: 8, stamina: 18, condition: 10, pain: -6, msg: "A campfire makes the dark negotiate." },
-      dangerousFood: { food: 8, hp: -8, stamina: 4, condition: hasTechnique("ironStomach") ? -2 : -10, pain: 8, msg: "Dangerous food stays down. Mostly." }
-    }[kind];
-    if (cfg.food && resources.food + cfg.food < 0) return notify?.("Not enough food.", "#e85c3a");
-    if (cfg.medicine && resources.medicine + cfg.medicine < 0) return notify?.("No medicine.", "#e85c3a");
-    if (cfg.materials && resources.materials + cfg.materials < 0) return notify?.("Not enough materials.", "#e85c3a");
-    patchResources({ food: cfg.food || 0, medicine: cfg.medicine || 0, materials: cfg.materials || 0 });
-    setHealth(h => clamp(h + cfg.hp, 0, maxHealth));
-    setStamina(s => cfg.stamina === 999 ? maxStamina : clamp(s + cfg.stamina, 0, maxStamina));
-    setCondition(c => clamp(c + cfg.condition));
-    setPain(p => clamp(p + cfg.pain));
-    setHunger(h => clamp(h + (kind === "eat" ? 25 : kind === "dangerousFood" ? 16 : 0)));
-    if (kind === "dangerousFood") setCounters(c => ({ ...c, dangerousMeals: c.dangerousMeals + 1 }));
-    if ((kind === "medicine" || kind === "sleep") && injuries.length && Math.random() < 0.45) {
-      const healed = injuries[0];
-      setInjuries(prev => prev.slice(1));
-      addLog(`Recovered from ${INJURIES.find(i => i.id === healed)?.name || "an injury"}.`, "heal");
+  function buyMeta(u) {
+    if (isMetaDisabled || meta.upgrades?.[u.id] || (meta.echoes || 0) < u.cost) return;
+    const next = { echoes: (meta.echoes || 0) - u.cost, upgrades: { ...(meta.upgrades || {}), [u.id]: true } };
+    setMeta(next); localStorage.setItem(META_KEY, JSON.stringify(next)); SFX.buy();
+  }
+
+  // ── Event resolution ────────────────────────────────────────────────────
+  const ev = g.event && !g.cinematic && !g.combat ? EVENTS[g.event.id]?.(g, g.event.data || {}) : null;
+  const choose = (choice) => {
+    SFX.click();
+    up((n) => { const data = n.event?.data; n.event = null; choice.run(n, data); });
+  };
+
+  // ── Bondage day/night ───────────────────────────────────────────────────
+  const bondTask = (t) => up((n) => { t.run(n); n.bondage.phase = "night"; });
+  const bondNight = (t) => up((n) => {
+    t.run(n);
+    const b = n.bondage;
+    if (b.suspicion >= 100) {
+      b.caught += 1; b.stash = 0; b.suspicion = 40; n.hp -= 30;
+      log(n, `CAUGHT. They make an example of you in the yard (-30 HP, stash lost). (${b.caught}/3)`, "dmg");
+      if (b.caught >= 3) { n.dead = { reason: "Sold to the deep mines as a lesson to the others. Nobody comes back from the mines." }; return; }
     }
-    addLog(cfg.msg, "heal");
-    advanceDay(kind === "sleep" ? 1 : 0);
+    b.day += 1; b.phase = "task"; n.day += 1;
+    n.stamina = Math.min(n.maxStamina, n.stamina + 45);
+    n.hp = Math.min(n.maxHp, n.hp + 4);
+    if (b.contacts >= 4 && !b.ledgerKnown) n.event = { id: "ledgertip" };
+    else if (Math.random() < 0.35) n.event = { id: pick(["inspection", "sickslave", "guest"]) };
+  });
+
+  // ── Combat ──────────────────────────────────────────────────────────────
+  if (g.cinematic) return <Cinematic shots={CINEMATICS[g.cinematic]} onDone={() => setG(p => ({ ...p, cinematic: null }))} />;
+
+  if (g.combat) {
+    const c = g.combat;
+    const actions = [...TEN_ACTIONS, ...TACTICS];
+    const enemies = buildEnemies(g, c, diff, makeEnemy);
+    const resultContent = c.summary && <div>
+      <h2 style={{ margin: "0 0 8px", color: c.result === "win" ? "#3ec995" : "#e85c3a" }}>{c.summary.title}</h2>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>{c.summary.lines.map((l, i) => <span key={i} className="pill" style={{ color: "#f0e0d0", borderColor: "rgba(255,255,255,0.2)" }}>{l}</span>)}</div>
+      <Btn variant={c.result === "win" ? "success" : "danger"} onClick={() => up(afterCombat)}>{g.dead ? "…" : "Continue"}</Btn>
+    </div>;
+    return <CombatScreen key={c.key} initialEnemies={enemies} player={battlePlayer(g)} ctx={combatCtx(g, !["duel", "raid", "hunters", "escape", "gate", "varn", "tribechase"].includes(c.kind))}
+      actions={actions} coreless allies={c.allies || 0} title={c.title || (c.kind === "hunt" ? "THE HUNT" : "COMBAT")}
+      subtitle={c.ambush ? "Ambush — they're staggered!" : undefined} canFlee={["hunt", "quest"].includes(c.kind)}
+      onFlee={() => up((n) => { n.combat = null; n.food = Math.max(0, n.food - 2); log(n, "You break off and run. You drop some food.", "dmg"); })}
+      background="radial-gradient(ellipse at top,#3a1a0e 0%,#0e0605 70%)"
+      onEnd={(result, battle) => up((n) => applyCombatResult(n, result, battle, diff))} resultContent={resultContent} />;
   }
 
-  function startCombat(extraDanger = 1, bossName = null) {
-    const template = bossName ? { name: bossName, hp: 170 + extraDanger * 25, atk: 22 + extraDanger * 4, evasion: 12, reward: 30 + extraDanger * 4 } : ENEMIES[Math.min(ENEMIES.length - 1, Math.max(0, extraDanger - 1))];
-    setCombat({ ...template, hp: template.hp, maxHp: template.hp, staggered: false });
-    setPhase("combat");
-    addLog(`${template.name} blocks your path.`, "dmg");
-    if (window.SFX?.roar) window.SFX.roar();
-  }
-
-  function attack(zone) {
-    if (!combat) return;
-    const zoneData = {
-      Head: { chance: 48, mult: 1.45, crit: 0.22 },
-      Chest: { chance: 68, mult: 1.0, crit: 0.12 },
-      Arms: { chance: 62, mult: 0.82, crit: 0.16 },
-      Legs: { chance: 58, mult: 0.9, crit: 0.2 }
-    }[zone];
-    const weaponBonus = resources.relics > 0 ? 7 : 0;
-    const techniqueBonus = hasTechnique("predatorReflex") ? 6 : 0;
-    const concussionPenalty = injuries.includes("concussion") ? 12 : 0;
-    const finalChance = zoneData.chance + techniqueBonus + conditionBonus + weaponBonus - combat.evasion - painPenalty - concussionPenalty;
-    const cost = zone === "Head" ? 18 : zone === "Chest" ? 12 : 10;
-    if (stamina < cost) return notify?.("Not enough stamina.", "#e85c3a");
-    setStamina(s => clamp(s - cost, 0, maxStamina));
-    const hit = Math.random() * 100 < finalChance;
-    if (hit) {
-      let damage = Math.floor((roll(12, 22) + clan.strength * 0.15 + (condition >= 90 ? 2 : 0)) * zoneData.mult);
-      if (injuries.includes("brokenArm")) damage = Math.floor(damage * 0.72);
-      if (hasTechnique("lastStand") && health <= maxHealth * 0.1) damage = Math.floor(damage * 1.2);
-      const critical = Math.random() < zoneData.crit;
-      if (critical) damage = Math.floor(damage * 1.45);
-      setCombat(e => ({ ...e, hp: Math.max(0, e.hp - damage), staggered: critical }));
-      addLog(`${zone} hit for ${damage}${critical ? " and staggered the enemy" : ""}.`, "reward");
-      if (window.SFX?.hit) window.SFX.hit();
-      setTimeout(() => {
-        setCombat(e => {
-          if (!e || e.hp > 0) return e;
-          finishCombat(e);
-          return null;
-        });
-      }, 120);
-    } else {
-      addLog(`You miss the ${zone.toLowerCase()}.`, "dmg");
-    }
-    setTimeout(() => {
-      setCombat(e => {
-        if (!e || e.hp <= 0) return e;
-        enemyTurn(e);
-        return e;
-      });
-    }, 300);
-  }
-
-  function enemyTurn(enemy) {
-    if (enemy.staggered) {
-      addLog(`${enemy.name} staggers and loses its attack.`, "heal");
-      setCombat(e => e ? ({ ...e, staggered: false }) : e);
-      return;
-    }
-    const dodgeChance = 8 + (condition >= 90 ? 5 : 0) + (hasTechnique("predatorReflex") ? 7 : 0) - painPenalty;
-    if (Math.random() * 100 < dodgeChance) {
-      setCounters(c => ({ ...c, perfectDodges: c.perfectDodges + 1 }));
-      addLog("A perfect dodge. The world narrows for a breath.", "heal");
-      return;
-    }
-    const resist = hasTechnique("unbreakable") ? 4 : 0;
-    const dmg = Math.max(1, roll(enemy.atk - 4, enemy.atk + 5) - resist);
-    setHealth(h => {
-      const next = h - dmg;
-      if (next <= 0) handleDeath(`Killed by ${enemy.name}.`);
-      return Math.max(0, next);
-    });
-    setPain(p => clamp(p + Math.ceil(dmg / 3)));
-    setCondition(c => clamp(c - Math.ceil(dmg / 8)));
-    addLog(`${enemy.name} hits you for ${dmg}.`, "dmg");
-    if (Math.random() < 0.18 + enemy.atk / 220) addInjury();
-  }
-
-  function finishCombat(enemy) {
-    const critical = health <= maxHealth * 0.1;
-    patchResources({ food: Math.ceil(enemy.reward / 3), materials: enemy.reward });
-    patchClan({ strength: Math.ceil(enemy.reward / 3), legacy: enemy.name.includes("Monarch") || enemy.name.includes("Mourak") ? 8 : 1 });
-    setCounters(c => ({ ...c, kills: c.kills + 1, criticalWins: c.criticalWins + (critical ? 1 : 0) }));
-    setCondition(c => clamp(c + 4));
-    setPhase("map");
-    addLog(`${enemy.name} falls. The kill feeds camp and reputation.`, "reward");
-    if (window.SFX?.victory) window.SFX.victory();
-  }
-
-  function handleDeath(reason) {
-    const title = calculateLegacyTitle();
-    setLegacyTitle({ title, reason });
-    const gained = isMetaDisabled ? 0 : Math.max(1, Math.floor((clan.strength + Math.max(0, clan.honor) + Math.max(0, clan.legacy)) / 30));
-    if (gained > 0) {
-      const next = echoes + gained;
-      setEchoes(next);
-      localStorage.setItem(META_KEY, JSON.stringify({ echoes: next, upgrades: metaUpgrades }));
-    }
-    setPhase("dead");
-  }
-
-  function calculateLegacyTitle() {
-    if (clan.strength >= 90 && clan.honor < 20) return "Warlord";
-    if (clan.legacy >= 90 && clan.population >= 20) return "Clan Founder";
-    if (counters.kills >= 100) return "Monster Slayer";
-    if (clan.honor >= 80) return "Guardian";
-    if (clan.legacy >= 50) return "Wandering Mourak";
-    return "Enduring Wanderer";
-  }
-
-  function chooseEvent(choice) {
-    const outcome = choice.apply({ condition, stamina, hunger });
-    applyOutcome(outcome);
-    setActiveEvent(null);
-    advanceDay(1);
-  }
-
-  function buyMeta(upgrade) {
-    if (isMetaDisabled || metaUpgrades[upgrade.id] || echoes < upgrade.cost) return;
-    const nextEchoes = echoes - upgrade.cost;
-    const nextUpgrades = { ...metaUpgrades, [upgrade.id]: true };
-    setEchoes(nextEchoes);
-    setMetaUpgrades(nextUpgrades);
-    localStorage.setItem(META_KEY, JSON.stringify({ echoes: nextEchoes, upgrades: nextUpgrades }));
-    addLog(`Ancestral memory awakened: ${upgrade.name}.`, "reward");
-  }
-
-  function triggerEnding(id) {
-    const scenes = {
-      monarch: "You take the broken throne without mana, without blessing, and without apology. Menfor calls you Grand Monarch because you endured what crowns could not.",
-      unite: "Banners gather under shared fire. Not conquered. Not bought. United because the wilds are less cruel when someone keeps watch.",
-      clan: "Your clan becomes the strongest in Menfor. Children learn your hunting paths before they learn old prayers.",
-      mourak: "You refuse thrones and walls. The land itself carries your name as a warning and a comfort.",
-      sacrifice: "You hold the pass while the camps flee. By sunrise, Menfor survives, and your absence becomes law."
-    };
-    setEnding({ id, scene: scenes[id], title: id === "monarch" ? "Grand Monarch" : id === "unite" ? "Uniter of Menfor" : id === "clan" ? "Strongest Clan" : id === "mourak" ? "Legendary Mourak" : "Guardian Sacrifice" });
-    setPhase("ending");
-    if (window.SFX?.victory) window.SFX.victory();
-  }
-
-  function resetScenario() {
-    localStorage.removeItem(SAVE_KEY);
-    setPhase("map"); setTab("map"); setDay(1); setHealth(125); setMaxHealth(125); setStamina(90); setMaxStamina(90);
-    setCondition(100); setPain(0); setHunger(70); setResources({ food: 20, materials: 12, medicine: 2, relics: 0 });
-    setClan({ strength: 0, honor: 0, legacy: 0, population: 1 }); setInjuries([]); setUnlockedTechniques([]);
-    setCounters({ severeInjuries: 0, perfectDodges: 0, criticalWins: 0, dangerousMeals: 0, kills: 0, brokenRecoveries: 0 });
-    setKnownRegions(["bone"]); setVisitedNodes({ bone: ["Bleached Trail"] }); setCurrentRegion("bone"); setCombatLog([]);
-  }
-
-  const statBox = (label, value, max, color) => (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-        <span style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase" }}>{label}</span>
-        <span style={{ fontSize: 11, color }}>{value}/{max}</span>
-      </div>
-      <Bar val={value} max={max} color={color} h={8} />
-    </div>
-  );
-
-  if (phase === "dead") {
-    return <div style={{ minHeight: "100vh", background: "linear-gradient(180deg,#120809,#050303)", color: "#fff", fontFamily: "var(--font-sans)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-      <Panel style={{ maxWidth: 620, borderColor: "#b83a2a", textAlign: "center" }}>
-        <Tag color="#b83a2a">Tenebrim Legacy</Tag>
-        <h1 style={{ margin: "18px 0 8px", color: "#fff" }}>{legacyTitle?.title}</h1>
-        <p style={{ color: "rgba(255,210,190,0.7)", lineHeight: 1.7 }}>{legacyTitle?.reason}</p>
-        <p style={{ color: "#e0a523", fontWeight: 800 }}>Your name will be remembered for strength {clan.strength}, honor {clan.honor}, legacy {clan.legacy}.</p>
-        {!isMetaDisabled && <Tag color="#e0a523">Ancestral Echoes: {echoes}</Tag>}
-        <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 24, flexWrap: "wrap" }}>
-          <Btn variant="danger" onClick={resetScenario}>Begin another endurance</Btn>
+  // ── Death / endings ─────────────────────────────────────────────────────
+  if (g.dead || g.ending) {
+    const E = g.ending ? FINALE_ENDINGS[g.ending] : null;
+    const good = g.ending && g.ending !== "chaintide";
+    const title = E ? E.title : g.legacy >= 40 ? "Remembered" : g.counters.kills >= 20 ? "Beast-Slayer" : g.flags.pactBroken ? "The One Who Broke the Chain" : "Enduring Wanderer";
+    return <div className="ten-root" style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      {good && <Confetti />}
+      <Panel style={{ maxWidth: 720, textAlign: "center", borderColor: good ? "#e0a523" : "#b83a2a", position: "relative", zIndex: 2 }}>
+        <Tag color={good ? "#e0a523" : "#b83a2a"}>{E ? "Ending" : "Legacy"}</Tag>
+        <h1 style={{ margin: "16px 0 10px", color: good ? "#ffd966" : "#fff", fontFamily: "Georgia, serif", fontWeight: 400, letterSpacing: "0.04em" }}>{title}</h1>
+        <p style={{ color: "rgba(255,235,210,0.8)", lineHeight: 1.8, fontSize: 16 }}>{E ? E.text : g.dead.reason}</p>
+        {g.ending === "founder" && g.sibling && g.flags.siblingFound && <p style={{ color: "#ffd966" }}>{g.sibling} carves the first mark on the new totem: yours.</p>}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", margin: "16px 0" }}>
+          <Tag color="#e0a523">Legacy {g.legacy}</Tag><Tag color="#e85c3a">Kills {g.counters.kills}</Tag><Tag color="#3ec995">Freed {g.counters.freed}</Tag><Tag color="#a89df0">Scars {g.scars}</Tag><Tag color="#ffd966">Days {g.day}</Tag>
+        </div>
+        {g.deeds.length > 0 && <div style={{ textAlign: "left", margin: "0 auto 16px", maxWidth: 480 }}>
+          <p className="section-label">Deeds carved in stone</p>
+          {g.deeds.map((d, i) => <p key={i} style={{ margin: "2px 0", fontSize: 13 }}>Day {d.day} — {d.text}</p>)}
+        </div>}
+        {!isMetaDisabled && <p style={{ fontSize: 12, color: "#e0a523" }}>Ancestral Echoes: {meta.echoes || 0}</p>}
+        <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+          <Btn variant="danger" onClick={() => { setG(newGame()); rewarded.current = false; }}>Begin another life</Btn>
           <Btn variant="ghost" onClick={() => setScreen("main_menu")}>Main menu</Btn>
         </div>
       </Panel>
     </div>;
   }
 
-  if (phase === "ending") {
-    return <div style={{ minHeight: "100vh", background: "radial-gradient(circle at 50% 0%,#3a2513,#080504 62%)", color: "#fff", fontFamily: "var(--font-sans)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-      <Confetti />
-      <Panel style={{ maxWidth: 720, borderColor: "#e0a523", textAlign: "center", position: "relative", zIndex: 2 }}>
-        <Tag color="#e0a523">Ending</Tag>
-        <h1 style={{ margin: "18px 0 8px", color: "#ffd966" }}>{ending?.title}</h1>
-        <p style={{ color: "rgba(255,235,200,0.78)", lineHeight: 1.8, fontSize: 16 }}>{ending?.scene}</p>
-        <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 24, flexWrap: "wrap" }}>
-          <Btn variant="gold" onClick={() => { exportSave?.(); setScreen("main_menu"); }}>Save legacy</Btn>
-          <Btn variant="ghost" onClick={resetScenario}>Start over</Btn>
+  // ── Origin select ───────────────────────────────────────────────────────
+  if (g.act === "origin") {
+    return <div className="ten-root" style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <div style={{ maxWidth: 820, width: "100%" }}>
+        <div style={{ textAlign: "center", marginBottom: 30 }}>
+          <Tag color="#b83a2a">Tenebrim</Tag>
+          <h1 style={{ fontSize: 44, margin: "14px 0 6px", fontFamily: "Georgia, serif", fontWeight: 400, color: "#fff" }}>Unbound</h1>
+          <p style={{ maxWidth: 560, margin: "0 auto", color: "rgba(255,230,210,0.7)" }}>Coreless. No mana, no spells, no passive healing — scars stay, sickness hits hard, and a slave pact has nothing in you to push against. What you have instead is a body that refuses to stop.</p>
         </div>
-      </Panel>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: 16 }}>
+          <div className="choice-card" style={{ "--accent": "rgba(184,58,42,0.45)", "--accent-strong": "#e85c3a", "--glow": "rgba(232,92,58,0.3)" }} onClick={() => begin("slave")}>
+            <Tag color="#e85c3a">Kremantin · Elysandria</Tag>
+            <h2 style={{ margin: "12px 0 8px", color: "#fff" }}>Slave in Elysandria</h2>
+            <p>Bound by a slave pact in a noble's Lower Estate. Work, watch, gather allies and routes — and survive the pact's backlash when you finally break it. Then cross the sea.</p>
+            <p style={{ fontSize: 12, color: "#ffb0a0", margin: 0 }}>Hunted by your former master. Clans distrust a returned slave.</p>
+          </div>
+          <div className="choice-card" style={{ "--accent": "rgba(255,140,66,0.45)", "--accent-strong": "#ff8c42", "--glow": "rgba(255,140,66,0.3)" }} onClick={() => begin("tribe")}>
+            <Tag color="#ff8c42">Menfor · Ashveil Basin</Tag>
+            <h2 style={{ margin: "12px 0 8px", color: "#fff" }}>Emberhide Tribe</h2>
+            <p>Raised among your own. Receive your markings, take your first hunt — and then the Syndicate comes in the night and takes your sibling to Chainhold.</p>
+            <p style={{ fontSize: 12, color: "#ffc89a", margin: 0 }}>Start with a clan that trusts you, and someone to get back.</p>
+          </div>
+        </div>
+        {!isMetaDisabled && <Panel style={{ marginTop: 18, borderColor: "rgba(224,165,35,0.35)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}><b style={{ color: "#e0a523" }}>Ancestral Echoes</b><Tag color="#e0a523">{meta.echoes || 0}</Tag></div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 8 }}>
+            {META_UPGRADES.map(u => <div key={u.id} style={{ padding: 10, borderRadius: 10, border: `1px solid ${meta.upgrades?.[u.id] ? "#3ec995" : "rgba(255,255,255,0.12)"}` }}>
+              <b style={{ fontSize: 13 }}>{u.name}</b><p style={{ fontSize: 11, margin: "4px 0 8px" }}>{u.desc}</p>
+              {meta.upgrades?.[u.id] ? <Tag color="#3ec995">Awakened</Tag> : <Btn small variant="gold" disabled={(meta.echoes || 0) < u.cost} onClick={() => buyMeta(u)}>{u.cost} Echoes</Btn>}
+            </div>)}
+          </div>
+        </Panel>}
+        {isMetaDisabled && <p style={{ textAlign: "center", fontSize: 12, color: "#e85c3a", marginTop: 14 }}>Ancestral Echoes are disabled on {diff?.name}.</p>}
+        <div style={{ textAlign: "center", marginTop: 18 }}><Btn variant="ghost" onClick={() => setScreen("main_menu")}>← Main menu</Btn></div>
+      </div>
     </div>;
   }
 
-  return (
-    <div style={{ minHeight: "100vh", background: "linear-gradient(160deg,#15100c 0%,#090706 48%,#100b12 100%)", color: "#fff", fontFamily: "var(--font-sans)", padding: 20 }}>
-      <div style={{ maxWidth: 1260, margin: "0 auto" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, marginBottom: 18, flexWrap: "wrap" }}>
-          <div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-              <Tag color="#b83a2a">Tenebrim</Tag>
-              <Tag color="#e0a523">Endure</Tag>
-              <Tag color="#3ec995">Day {day}</Tag>
-              <Tag color={condition >= 70 ? "#3ec995" : condition >= 40 ? "#e0a523" : "#e85c3a"}>{conditionBand}</Tag>
-            </div>
-            <h1 style={{ margin: 0, fontSize: 30, letterSpacing: "0.02em" }}>Menfor Survival</h1>
-            <p style={{ margin: "6px 0 0", color: "rgba(255,255,255,0.55)", maxWidth: 720 }}>Adapt. Endure. Leave behind a legacy.</p>
-          </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <Btn small variant="ghost" onClick={() => { exportSave?.(); notify?.("Tenebrim scenario saved.", "#3ec995"); }}>Save</Btn>
-            <Btn small variant="ghost" onClick={() => setScreen("main_menu")}>Menu</Btn>
-          </div>
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(240px, 300px) 1fr minmax(260px, 320px)", gap: 18, alignItems: "start" }}>
-          <Panel style={{ borderColor: "#6e3a24", position: "sticky", top: 20 }}>
-            <h3 style={{ color: "#e0a523", margin: "0 0 14px" }}>Body</h3>
-            <div style={{ display: "grid", gap: 12 }}>
-              {statBox("Health", health, maxHealth, "#e85c3a")}
-              {statBox("Stamina", stamina, maxStamina, "#3ec995")}
-              {statBox("Condition", condition, 100, condition >= 70 ? "#3ec995" : condition >= 40 ? "#e0a523" : "#e85c3a")}
-              {statBox("Pain", pain, 100, "#b83a2a")}
-              {statBox("Hunger", hunger, 100, "#ffd966")}
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 18 }}>
-              <Tag color="#ffd966">Food {resources.food}</Tag>
-              <Tag color="#a8a8a8">Materials {resources.materials}</Tag>
-              <Tag color="#3ec995">Medicine {resources.medicine}</Tag>
-              <Tag color="#a89df0">Relics {resources.relics}</Tag>
-            </div>
-            <div style={{ marginTop: 16, display: "grid", gap: 8 }}>
-              <Btn small full variant="success" onClick={() => rest("eat")}>Eat</Btn>
-              <Btn small full variant="primary" onClick={() => rest("sleep")}>Sleep</Btn>
-              <Btn small full variant="success" onClick={() => rest("medicine")}>Medicine</Btn>
-              <Btn small full variant="amber" onClick={() => rest("campfire")}>Campfire</Btn>
-              <Btn small full variant="danger" onClick={() => rest("dangerousFood")}>Risky Food</Btn>
-            </div>
-            {injuries.length > 0 && <div style={{ marginTop: 16 }}>
-              <p style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", fontWeight: 800, letterSpacing: "0.08em" }}>INJURIES</p>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{injuries.map(id => <Tag key={id} color="#e85c3a">{INJURIES.find(i => i.id === id)?.name || id}</Tag>)}</div>
-            </div>}
-          </Panel>
-
-          <main style={{ display: "grid", gap: 16 }}>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {["map", "hunt", "clan", "techniques", "legacy"].map(id => <Btn key={id} small variant={tab === id ? "gold" : "ghost"} onClick={() => setTab(id)}>{id}</Btn>)}
-            </div>
-
-            {activeEvent && <Panel style={{ borderColor: "#e0a523", background: "linear-gradient(180deg,rgba(50,32,12,0.8),rgba(18,10,4,0.9))" }}>
-              <Tag color="#e0a523">Survival Event</Tag>
-              <h2 style={{ margin: "12px 0 8px" }}>{activeEvent.title}</h2>
-              <p style={{ color: "rgba(255,240,210,0.7)", lineHeight: 1.7 }}>{activeEvent.description}</p>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 10, marginTop: 16 }}>
-                {activeEvent.choices.map(c => <Panel key={c.label} onClick={() => chooseEvent(c)} style={{ padding: 14, borderColor: "#e0a523", borderRadius: 8 }}>
-                  <h4 style={{ margin: "0 0 6px", color: "#ffd966" }}>{c.label}</h4>
-                  <p style={{ margin: 0, fontSize: 12, color: "rgba(255,255,255,0.55)" }}>{c.result}</p>
-                </Panel>)}
-              </div>
-            </Panel>}
-
-            {phase === "combat" && combat && <Panel style={{ borderColor: "#b83a2a" }}>
-              <Tag color="#b83a2a">Physical Combat</Tag>
-              <h2 style={{ margin: "12px 0 6px" }}>{combat.name}</h2>
-              <Bar val={combat.hp} max={combat.maxHp} color="#e85c3a" h={12} />
-              <p style={{ color: "rgba(255,255,255,0.55)", fontSize: 12 }}>Target weak points. Hit chance uses condition, technique, weapon, pain, and enemy evasion.</p>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginTop: 16 }}>
-                {["Head", "Chest", "Arms", "Legs"].map(zone => <Btn key={zone} variant={zone === "Head" ? "danger" : "primary"} onClick={() => attack(zone)}>{zone}</Btn>)}
-              </div>
-            </Panel>}
-
-            {tab === "map" && phase !== "combat" && <Panel style={{ borderColor: "#6e3a24" }}>
-              <h2 style={{ margin: "0 0 12px", color: "#e0a523" }}>Regional Map</h2>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(210px,1fr))", gap: 10 }}>
-                {REGIONS.map(region => {
-                  const known = knownRegions.includes(region.id);
-                  return <Panel key={region.id} onClick={known ? () => travel(region.id) : undefined} style={{ padding: 14, borderColor: known ? (region.id === currentRegion ? "#e0a523" : "rgba(255,255,255,0.18)") : "rgba(255,255,255,0.06)", opacity: known ? 1 : 0.35, borderRadius: 8 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                      <h4 style={{ margin: 0, color: known ? "#fff" : "rgba(255,255,255,0.35)" }}>{known ? region.name : "Unknown Region"}</h4>
-                      <Tag color={region.danger >= 4 ? "#e85c3a" : region.danger >= 2 ? "#e0a523" : "#3ec995"}>D{region.danger}</Tag>
-                    </div>
-                    {known && <p style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", lineHeight: 1.5 }}>{region.weather}. Resources: {region.resources.join(", ")}.</p>}
-                  </Panel>;
-                })}
-              </div>
-              <h3 style={{ margin: "20px 0 10px", color: "#ffd966" }}>{current.name} Nodes</h3>
-              <div style={{ display: "grid", gap: 10 }}>
-                {(visitedNodes[current.id] || []).map(node => <Panel key={node} style={{ borderColor: "rgba(224,165,35,0.28)", borderRadius: 8, padding: 14 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-                    <div><strong>{node}</strong><p style={{ margin: "4px 0 0", color: "rgba(255,255,255,0.45)", fontSize: 12 }}>Safe scavenge, deep search, or forbidden search.</p></div>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <Btn small variant="success" onClick={() => riskAction(node, "safe")}>Safe</Btn>
-                      <Btn small variant="gold" onClick={() => riskAction(node, "deep")}>Deep</Btn>
-                      <Btn small variant="danger" onClick={() => riskAction(node, "forbidden")}>Forbidden</Btn>
-                    </div>
-                  </div>
-                </Panel>)}
-              </div>
-              {knownRegions.length < REGIONS.length && <Btn style={{ marginTop: 14 }} variant="ghost" onClick={() => setKnownRegions(k => [...k, REGIONS[k.length].id])}>Scout Unknown Border</Btn>}
-              <Btn style={{ marginTop: 14, marginLeft: 10 }} variant="danger" onClick={() => startCombat(current.danger + 3, current.boss)}>Challenge Region Boss</Btn>
-            </Panel>}
-
-            {tab === "hunt" && phase !== "combat" && <Panel style={{ borderColor: "#3ec995" }}>
-              <h2 style={{ marginTop: 0, color: "#3ec995" }}>Hunting</h2>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
-                <Btn variant="success" onClick={() => hunt("small")}>Small prey</Btn>
-                <Btn variant="gold" onClick={() => hunt("large")}>Large prey</Btn>
-                <Btn variant="danger" onClick={() => hunt("alpha")}>Alpha hunt</Btn>
-              </div>
-            </Panel>}
-
-            {tab === "clan" && <Panel style={{ borderColor: "#e0a523" }}>
-              <h2 style={{ marginTop: 0, color: "#e0a523" }}>Clan</h2>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 18 }}>
-                <Tag color="#e85c3a">Strength {clan.strength}</Tag>
-                <Tag color="#3ec995">Honor {clan.honor}</Tag>
-                <Tag color="#e0a523">Legacy {clan.legacy}</Tag>
-                <Tag color="#a89df0">Population {clan.population}</Tag>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 10 }}>
-                <Btn variant="success" onClick={() => { patchClan({ honor: 4, legacy: 1 }); patchResources({ food: -5 }); addLog("You protect a small camp on the road.", "heal"); }}>Protect people</Btn>
-                <Btn variant="gold" onClick={() => { patchClan({ legacy: 6 }); patchResources({ materials: -10 }); addLog("A settlement marker rises from stone and hide.", "reward"); }}>Construct settlement</Btn>
-                <Btn variant="danger" onClick={() => { patchClan({ honor: -8, strength: 3 }); addLog("You abandon allies to win faster.", "dmg"); }}>Abandon allies</Btn>
-                <Btn variant="danger" onClick={() => { patchClan({ legacy: -8, strength: 10 }); addLog("A rival clan is broken. Menfor grows quieter.", "dmg"); }}>Destroy clan</Btn>
-              </div>
-            </Panel>}
-
-            {tab === "techniques" && <Panel style={{ borderColor: "#a89df0" }}>
-              <h2 style={{ marginTop: 0, color: "#a89df0" }}>Techniques</h2>
-              <p style={{ color: "rgba(255,255,255,0.5)" }}>Techniques are not purchased. They unlock from what your body survives.</p>
-              <div style={{ display: "grid", gap: 10 }}>
-                {TECHNIQUES.map(t => <Panel key={t.id} style={{ padding: 14, borderColor: unlockedTechniques.includes(t.id) ? "#3ec995" : "rgba(255,255,255,0.14)", borderRadius: 8 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                    <strong style={{ color: unlockedTechniques.includes(t.id) ? "#3ec995" : "#fff" }}>{t.name}</strong>
-                    <Tag color={unlockedTechniques.includes(t.id) ? "#3ec995" : "#a8a8a8"}>{unlockedTechniques.includes(t.id) ? "Unlocked" : "Locked"}</Tag>
-                  </div>
-                  <p style={{ margin: "6px 0", color: "rgba(255,255,255,0.6)" }}>{t.description}</p>
-                  <p style={{ margin: 0, fontSize: 12, color: "#e0a523" }}>{t.unlockCondition}</p>
-                </Panel>)}
-              </div>
-            </Panel>}
-
-            {tab === "legacy" && <Panel style={{ borderColor: "#ffd966" }}>
-              <h2 style={{ marginTop: 0, color: "#ffd966" }}>Legacy and Endings</h2>
-              {!isMetaDisabled && <div style={{ marginBottom: 18 }}>
-                <Tag color="#e0a523">Ancestral Echoes {echoes}</Tag>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 10, marginTop: 12 }}>
-                  {META_UPGRADES.map(up => <Panel key={up.id} style={{ padding: 14, borderColor: metaUpgrades[up.id] ? "#3ec995" : "rgba(224,165,35,0.35)", borderRadius: 8 }}>
-                    <strong>{up.name}</strong>
-                    <p style={{ fontSize: 12, color: "rgba(255,255,255,0.55)" }}>{up.desc}</p>
-                    {metaUpgrades[up.id] ? <Tag color="#3ec995">Unlocked</Tag> : <Btn small variant="gold" disabled={echoes < up.cost} onClick={() => buyMeta(up)}>Echoes {up.cost}</Btn>}
-                  </Panel>)}
-                </div>
-              </div>}
-              {isMetaDisabled && <Tag color="#b83a2a">Meta progression unavailable on {diff?.name}</Tag>}
-              <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
-                <Btn variant="gold" disabled={clan.strength < 120 || clan.legacy < 80} onClick={() => triggerEnding("monarch")}>Become Grand Monarch</Btn>
-                <Btn variant="success" disabled={clan.honor < 90 || clan.population < 25} onClick={() => triggerEnding("unite")}>Unite Menfor</Btn>
-                <Btn variant="gold" disabled={clan.strength < 100 || clan.population < 30} onClick={() => triggerEnding("clan")}>Build strongest clan</Btn>
-                <Btn variant="primary" disabled={counters.kills < 100 || clan.legacy < 60} onClick={() => triggerEnding("mourak")}>Become legendary Mourak</Btn>
-                <Btn variant="danger" disabled={clan.honor < 70 || health > maxHealth * 0.35} onClick={() => triggerEnding("sacrifice")}>Sacrifice yourself protecting Menfor</Btn>
-              </div>
-            </Panel>}
-          </main>
-
-          <Panel style={{ borderColor: "#33271d", position: "sticky", top: 20, maxHeight: "calc(100vh - 40px)", overflow: "hidden", display: "flex", flexDirection: "column" }}>
-            <h3 style={{ color: "#d6c0a0", margin: "0 0 12px" }}>Survival Log</h3>
-            <div ref={logRef} style={{ overflowY: "auto", minHeight: 320, fontSize: 12, lineHeight: 1.65, paddingRight: 4 }}>
-              {combatLog.length === 0 ? <p style={{ color: "rgba(255,255,255,0.35)" }}>The wilds wait.</p> : combatLog.map(l => <div key={l.id} style={{ color: l.type === "dmg" ? "#e85c3a" : l.type === "reward" ? "#ffd966" : l.type === "heal" ? "#3ec995" : "rgba(255,255,255,0.68)", marginBottom: 6 }}>{l.msg}</div>)}
-            </div>
-            <div style={{ borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: 12, marginTop: 12 }}>
-              <p style={{ margin: "0 0 8px", fontSize: 11, color: "rgba(255,255,255,0.45)", fontWeight: 800 }}>BODY MODIFIERS</p>
-              <p style={{ margin: 0, fontSize: 12, color: "rgba(255,255,255,0.58)", lineHeight: 1.6 }}>Condition bonus {conditionBonus >= 0 ? "+" : ""}{conditionBonus}. Pain penalty -{painPenalty}. Tracking +{trackingBonus}.</p>
-              {learned.length > 0 && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>{learned.map(t => <Tag key={t.id} color="#a89df0">{t.name}</Tag>)}</div>}
-            </div>
-          </Panel>
-        </div>
+  const eventOverlay = ev && <div className="ten-event-wrap">
+    <div className="ten-event" style={{ borderColor: ev.tone || "#e0a523" }}>
+      <p className="section-label" style={{ color: ev.tone }}>{g.act === "bondage" ? `Lower Estate · Day ${g.bondage?.day}` : g.act === "tribe" ? "Emberhide" : `Day ${g.day} · ${SEGS[g.seg]}`}</p>
+      <h2 style={{ margin: "0 0 10px", color: "#fff", fontFamily: "Georgia, serif", fontWeight: 400 }}>{ev.title}</h2>
+      <p style={{ color: "rgba(255,240,220,0.8)", lineHeight: 1.75, fontSize: 15 }}>{ev.text}</p>
+      <div style={{ display: "grid", gap: 8, marginTop: 14 }}>
+        {ev.choices.map((c, i) => <button key={i} className="ten-choice" disabled={!!c.disabled} onClick={() => choose(c)}>
+          <b>{c.label}</b>{c.hint && <span>{c.hint}</span>}
+        </button>)}
       </div>
     </div>
-  );
+  </div>;
+
+  const body = <Panel style={{ borderColor: "#6e3a24", padding: 16 }}>
+    <p className="section-label" style={{ color: "#e0a523" }}>Body</p>
+    {[["Health", g.hp, g.maxHp, "#e85c3a"], ["Stamina", g.stamina, g.maxStamina, "#3ec995"], ...(g.act === "menfor" ? [["Fullness", g.hunger, 100, "#ffd966"], ["Hydration", g.thirst, 100, "#4dd9c2"]] : [])].map(([l, v, m, c]) =>
+      <div key={l} style={{ marginBottom: 8 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 3 }}><span style={{ color: c, fontWeight: 800 }}>{l}</span><span style={{ color: "rgba(255,255,255,0.55)" }}>{Math.round(v)}/{m}</span></div>
+        <Bar val={v} max={m} color={c} h={7} />
+      </div>)}
+    {g.heritage && <p style={{ fontSize: 11, margin: "8px 0 4px" }}><b style={{ color: "#ffb347" }}>{heritageOf(g).name}</b> · {weaponOf(g).name} (+{weaponOf(g).atk})</p>}
+    {g.act === "menfor" && <div style={{ display: "flex", gap: 5, flexWrap: "wrap", margin: "8px 0" }}>
+      <Tag color="#ffd966">Food {g.food}</Tag><Tag color="#4dd9c2">Water {g.water}</Tag><Tag color="#c8b48a">Materials {g.materials}</Tag><Tag color="#3ec995">Herbs {g.herbs}</Tag><Tag color="#e0a523">Trophies {g.trophies}</Tag>
+    </div>}
+    {g.wounds.length > 0 && <div style={{ marginTop: 8 }}>
+      <p className="section-label">Wounds</p>
+      {g.wounds.map(w => <div key={w.type} style={{ fontSize: 11.5, color: "#ff9a8a", marginBottom: 3 }}>{WOUNDS[w.type].name} <span style={{ opacity: 0.6 }}>— {WOUNDS[w.type].desc} {w.days}d</span></div>)}
+    </div>}
+    <p style={{ fontSize: 11, margin: "8px 0 0" }}>Scars: <b>{g.scars}</b> · Legacy: <b style={{ color: "#ffd966" }}>{g.legacy}</b></p>
+    {g.act === "menfor" && <div style={{ display: "grid", gap: 6, marginTop: 10 }}>
+      <Btn small full variant="success" disabled={g.herbs < 1} onClick={() => up(tend)}>Tend wounds (1 herb)</Btn>
+      {g.flags.freshKill && <Btn small full variant="danger" onClick={() => up(riskyMeal)}>Eat the kill raw</Btn>}
+    </div>}
+  </Panel>;
+
+  const journal = <Panel style={{ borderColor: "#33271d", padding: 14, display: "flex", flexDirection: "column", maxHeight: "calc(100vh - 120px)", position: "sticky", top: 16 }}>
+    <p className="section-label" style={{ color: "#d6c0a0" }}>Journal</p>
+    <div ref={logRef} style={{ overflowY: "auto", fontSize: 12, lineHeight: 1.6, flex: 1, minHeight: 200 }}>
+      {g.log.map(l => <div key={l.id} style={{ color: LOGC[l.type] || "#ccc", marginBottom: 5 }}>{l.msg}</div>)}
+    </div>
+  </Panel>;
+
+  const header = (sub) => <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+    <div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}><Tag color="#b83a2a">Tenebrim</Tag><Tag color="#e0a523">{g.origin === "slave" ? "Escaped slave" : "Emberhide"}</Tag>{sub}</div>
+      <h1 style={{ margin: 0, fontSize: 28, fontFamily: "Georgia, serif", fontWeight: 400, color: "#fff" }}>{g.act === "bondage" ? "The Lower Estate" : g.act === "tribe" ? "Emberhide Camp" : regionOf(g).name}</h1>
+    </div>
+    <div style={{ display: "flex", gap: 8 }}>
+      <Btn small variant="ghost" onClick={() => { exportSave?.(); notify?.("Saved.", "#3ec995"); }}>Save</Btn>
+      <Btn small variant="ghost" onClick={() => setScreen("main_menu")}>Menu</Btn>
+    </div>
+  </div>;
+
+  // ── Bondage view ────────────────────────────────────────────────────────
+  if (g.act === "bondage") {
+    const b = g.bondage;
+    const canEscape = b.info >= 4 && (b.strain >= 60 || b.ledger);
+    return <div className="ten-root"><div className="ten-wrap">
+      {header(<Tag color="#ffd966">Day {b.day} · {b.phase === "night" ? "Night" : "Labor"}</Tag>)}
+      <div className="ten-grid">
+        {body}
+        <main style={{ display: "grid", gap: 14, alignContent: "start" }}>
+          <Panel style={{ borderColor: "#b83a2a" }}>
+            <p className="section-label" style={{ color: "#e85c3a" }}>Escape plan</p>
+            {[["Routes known", b.info, 4, "#4dd9c2", "Learn ship schedules and patrols (docks, kennels)"], ["Contacts", b.contacts, 4, "#a89df0", "Allies among the slaves — they can help on the night"], ["Pact strain", b.strain, 60, "#ff6b4a", "Resist the pact to weaken it — or steal the ledger"], ["Suspicion", b.suspicion, 100, "#e85c3a", "At 100 you are caught"]].map(([l, v, m, c, d]) =>
+              <div key={l} style={{ marginBottom: 9 }} title={d}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 3 }}><span style={{ color: c, fontWeight: 800 }}>{l}</span><span style={{ color: "rgba(255,255,255,0.55)" }}>{v}/{m}</span></div>
+                <Bar val={Math.min(v, m)} max={m} color={c} h={6} />
+                <p style={{ fontSize: 10.5, margin: "2px 0 0", color: "rgba(255,255,255,0.4)" }}>{d}</p>
+              </div>)}
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+              <Tag color="#ffd966">Stash {b.stash}</Tag>{b.ledgerKnown && <Tag color={b.ledger ? "#3ec995" : "#e0a523"}>{b.ledger ? "Ledger page stolen" : "Ledger location known"}</Tag>}{b.caught > 0 && <Tag color="#e85c3a">Caught {b.caught}/3</Tag>}
+            </div>
+            <Btn variant="gold" full disabled={!canEscape} onClick={() => up((n) => { n.event = { id: "escape" }; })} style={{ marginTop: 12 }}>{canEscape ? "Escape tonight ↗" : "Escape (needs 4 routes, and 60 pact strain or the ledger)"}</Btn>
+          </Panel>
+          <Panel style={{ borderColor: "rgba(255,255,255,0.12)" }}>
+            <p className="section-label">{b.phase === "night" ? "Night — one action" : "Labor — choose your work"}</p>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 10 }}>
+              {(b.phase === "night" ? BONDAGE_NIGHT.filter(t => !t.requires || t.requires(g)) : BONDAGE_TASKS).map(t =>
+                <button key={t.id} className="ten-choice" disabled={!!g.event} onClick={() => (b.phase === "night" ? bondNight(t) : bondTask(t))}><b>{t.name}</b><span>{t.desc}</span></button>)}
+            </div>
+          </Panel>
+        </main>
+        {journal}
+      </div>
+    </div>{eventOverlay}</div>;
+  }
+
+  // ── Tribe prologue ──────────────────────────────────────────────────────
+  if (g.act === "tribe") {
+    return <div className="ten-root"><div className="ten-wrap">
+      {header(<Tag color="#ff8c42">Prologue</Tag>)}
+      <div className="ten-grid">
+        {body}
+        <main><Panel style={{ borderColor: "#ff8c42" }}>
+          <p style={{ color: "rgba(255,230,200,0.8)", lineHeight: 1.8 }}>The Emberhide longhouses ring a black-sand basin. Steam rises from the vents; hammers ring from the forges. {g.sibling} is waiting for you by the goat pens, pretending not to be nervous for you.</p>
+          {!g.event && g.tribeStep === 1 && <Btn variant="gold" onClick={() => up(n => { n.event = { id: "firsthunt" }; })}>Go on the hunt</Btn>}
+          {!g.event && g.tribeStep === 2 && <Btn variant="danger" onClick={() => up(n => { n.cinematic = "raid"; n.event = { id: "raid" }; })}>Night falls…</Btn>}
+          {!g.event && g.tribeStep === 3 && <Btn variant="gold" onClick={() => up(n => { n.event = { id: "leave" }; })}>Leave</Btn>}
+        </Panel></main>
+        {journal}
+      </div>
+    </div>{eventOverlay}</div>;
+  }
+
+  // ── Menfor ──────────────────────────────────────────────────────────────
+  const r = regionOf(g);
+  const clanHere = r.clan;
+  const caravanHere = g.caravans[g.region];
+  const gripCol = g.grip < 40 ? "#3ec995" : g.grip < 70 ? "#e0a523" : "#e85c3a";
+  const objective = g.flags.fortTaken ? "Chainhold has fallen." : g.origin === "tribe" ? `Free ${g.sibling} from Chainhold on the Black Stone Coast.` : "Break Chainhold before the Syndicate's grip closes on Menfor.";
+
+  const tabs = [["region", "Region"], ["map", "Map"], ["band", `Band (${g.band.length})`], ["clans", "Clans"], ["camp", "Camp & gear"], ["marks", "Marks"]];
+  return <div className="ten-root"><div className="ten-wrap">
+    {header(<><Tag color="#ffd966">Day {g.day}</Tag><Tag color="#ffb347">{["☀ Dawn", "☀ Day", "☾ Dusk"][g.seg]}</Tag>{g.origin === "slave" && !g.flags.fortTaken && <Tag color="#e85c3a">Hunted {g.pursuit}</Tag>}</>)}
+    <Panel style={{ padding: "12px 16px", marginBottom: 14, borderColor: `${gripCol}55` }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".12em", color: gripCol }}>SYNDICATE GRIP — {g.grip}%</span>
+        <span style={{ fontSize: 12, color: "rgba(255,240,220,0.7)" }}>Objective: {objective}</span>
+      </div>
+      <Bar val={g.grip} max={100} color={gripCol} h={8} />
+      <p style={{ fontSize: 10.5, margin: "4px 0 0", color: "rgba(255,255,255,0.4)" }}>Rises every day. Raids on clans grow likelier as it climbs. Raid caravans to push it back. At 100%, Menfor falls.</p>
+    </Panel>
+    <div className="ten-grid">
+      {body}
+      <main style={{ display: "grid", gap: 12, alignContent: "start" }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{tabs.map(([id, l]) => <Btn key={id} small variant={tab === id ? "gold" : "ghost"} onClick={() => setTab(id)}>{l}</Btn>)}</div>
+
+        {tab === "region" && <Panel style={{ borderColor: "#6e3a24" }}>
+          <p style={{ color: "rgba(255,235,210,0.75)", marginBottom: 10 }}>{r.desc}</p>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
+            <Tag color={r.danger >= 4 ? "#e85c3a" : r.danger >= 2 ? "#e0a523" : "#3ec995"}>Danger {r.danger}</Tag>
+            <Tag color="#4dd9c2">Water: {r.water === "spring" ? "spring" : r.water === "seep" ? "seep" : "none — dig"}</Tag>
+            {caravanHere && <Tag color="#e85c3a" glow>Syndicate caravan here!</Tag>}
+            {clanHere && <Tag color={CLANS[clanHere].color}>{CLANS[clanHere].name} territory</Tag>}
+          </div>
+          <div className="ten-actions">
+            <button className="ten-choice" onClick={() => up(forage, false)}><b>Forage</b><span>-10 stamina · food, materials</span></button>
+            <button className="ten-choice" onClick={() => up(forage, true)}><b>Deep search</b><span>-20 stamina · double yield, herbs, real risk</span></button>
+            <button className="ten-choice" onClick={() => up(hunt)}><b>Hunt</b><span>-15 stamina · stalk {r.beasts.slice(0, 2).join(" / ")}… ambush if you're quiet</span></button>
+            <button className="ten-choice" onClick={() => up(drawWater)}><b>{r.water === "none" ? "Dig for water" : "Draw water"}</b><span>{r.water === "spring" ? "+8 water" : r.water === "seep" ? "+4 water" : "-15 stamina, maybe +2-4"}</span></button>
+            <button className="ten-choice" onClick={() => up(rest)}><b>Rest</b><span>+12% HP, +45 stamina, wounds may close</span></button>
+            <button className="ten-choice" onClick={() => up(scout)}><b>Scout</b><span>Reveal nearby regions and caravans</span></button>
+            {caravanHere && <button className="ten-choice danger" onClick={() => up(raidCaravan)}><b>Raid the caravan</b><span>Free captives · Grip -10</span></button>}
+            {clanHere && <button className="ten-choice" style={{ borderColor: CLANS[clanHere].color }} onClick={() => up(n => { n.event = { id: "clan", data: { clan: clanHere } }; })}><b>Visit the {CLANS[clanHere].name}</b><span>Trade, work, duels, recruits, alliance ({g.clans[clanHere].rel})</span></button>}
+            {r.relic && <button className="ten-choice danger" onClick={() => up(searchRuins)}><b>Search the Monarch's ruins</b><span>-25 stamina, half a day · {g.flags.horn ? "relic-scrap" : "something legendary is buried here"}</span></button>}
+            {r.fort && !g.flags.fortTaken && <button className="ten-choice danger" onClick={() => up(n => { n.event = { id: "assault" }; })}><b>Storm Chainhold</b><span>Allied clans {alliedClans(g).length} · band {g.band.length}</span></button>}
+            {r.fort && <button className="ten-choice" onClick={() => up(n => { n.event = { id: "sail" }; })}><b>Find a smuggler's boat</b><span>Leave Menfor forever</span></button>}
+          </div>
+          <p className="section-label" style={{ marginTop: 16 }}>Travel</p>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {r.links.map(l => <Btn key={l} small variant="ghost" onClick={() => up(travel, l)}>{g.known.includes(l) ? REGIONS[l].name : "Unknown land"} → <span style={{ opacity: 0.6, marginLeft: 4 }}>{1 + (REGIONS[l].water === "none" ? 1 : 0)} water{REGIONS[l].danger >= 3 ? ", half day" : ""}</span></Btn>)}
+          </div>
+        </Panel>}
+
+        {tab === "map" && <Panel style={{ borderColor: "#6e3a24", padding: 10 }}>
+          <svg viewBox="0 12 100 84" className="ten-map">
+            <defs><radialGradient id="tenSea"><stop offset="0%" stopColor="#2a1a10" /><stop offset="100%" stopColor="#0a0605" /></radialGradient></defs>
+            <rect y="12" width="100" height="84" fill="url(#tenSea)" />
+            {Object.entries(REGIONS).flatMap(([k, R]) => R.links.filter(l => l > k).map(l => {
+              const vis = g.known.includes(k) || g.known.includes(l);
+              return vis && <line key={k + l} x1={R.x} y1={R.y} x2={REGIONS[l].x} y2={REGIONS[l].y} stroke="rgba(255,200,150,0.25)" strokeWidth="0.5" strokeDasharray="1.2 1" />;
+            }))}
+            {Object.entries(REGIONS).map(([k, R]) => {
+              const known = g.known.includes(k); const here = k === g.region; const linked = regionOf(g).links.includes(k);
+              if (!known && !linked) return null;
+              return <g key={k} style={{ cursor: linked ? "pointer" : "default" }} onClick={() => linked && up(travel, k)}>
+                <circle cx={R.x} cy={R.y} r={here ? 3.4 : 2.6} fill={here ? "#ffd966" : R.fort ? "#e85c3a" : known ? "#c87a4a" : "#3a2a20"} stroke={linked ? "#fff" : "none"} strokeWidth="0.4" />
+                {g.caravans[k] && known && <circle cx={R.x} cy={R.y} r="4.6" fill="none" stroke="#e85c3a" strokeWidth="0.5" className="ten-pulse" />}
+                <text x={R.x} y={R.y - 4.5} textAnchor="middle" fontSize="2.8" fill={known ? "#f0d8c0" : "#7a6a5a"}>{known ? R.name : "?"}</text>
+                {R.clan && known && <text x={R.x} y={R.y + 6} textAnchor="middle" fontSize="2.2" fill={g.clans[R.clan].fallen ? "#e85c3a" : CLANS[R.clan].color}>{g.clans[R.clan].fallen ? "fallen" : CLANS[R.clan].name}</text>}
+              </g>;
+            })}
+          </svg>
+          <p style={{ fontSize: 11, margin: "6px 0 0" }}>Click a neighbouring region to travel. Red rings mark known caravans.</p>
+        </Panel>}
+
+        {tab === "band" && <Panel style={{ borderColor: "#3ec995" }}>
+          <p style={{ fontSize: 12 }}>Every follower eats 1 food and drinks 1 water a day. If you can't feed them, they leave.</p>
+          {g.band.length === 0 ? <p style={{ color: "rgba(255,255,255,0.4)" }}>You walk alone. Free captives or recruit from clans.</p> :
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(170px,1fr))", gap: 8 }}>
+              {g.band.map(b => <div key={b.id} style={{ padding: 10, borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.25)" }}>
+                <b>{ROLES[b.role].icon} {b.name}</b><p style={{ fontSize: 11, margin: "4px 0 0" }}>{ROLES[b.role].label} — {ROLES[b.role].desc}</p>
+              </div>)}
+            </div>}
+          {g.flags.horn && <p style={{ marginTop: 10, color: "#ffd966" }}>A beast answers the Monarch's Horn and fights beside you (+2 allies).</p>}
+        </Panel>}
+
+        {tab === "clans" && <Panel style={{ borderColor: "#e0a523" }}>
+          <div style={{ display: "grid", gap: 8 }}>
+            {Object.entries(CLANS).map(([k, C]) => { const c = g.clans[k]; return <div key={k} style={{ padding: 12, borderRadius: 10, border: `1px solid ${C.color}55`, background: "rgba(0,0,0,0.25)", opacity: c.fallen ? 0.5 : 1 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                <b style={{ color: C.color }}>{C.name}</b>
+                <span>{c.fallen ? <Tag color="#e85c3a">Fallen</Tag> : c.allied ? <Tag color="#3ec995" glow>Allied</Tag> : <Tag color="#a8a8a8">Relation {c.rel}</Tag>}</span>
+              </div>
+              <p style={{ fontSize: 11.5, margin: "4px 0" }}>{C.trait} Home: {REGIONS[C.region].name}. Raided {c.raided}/3.</p>
+              {!c.fallen && <Bar val={c.rel + 100} max={200} color={C.color} h={4} />}
+            </div>; })}
+          </div>
+        </Panel>}
+
+        {tab === "camp" && <Panel style={{ borderColor: "#c8b48a" }}>
+          {!g.camp ? <><p>A camp of your own: production, a forge, and something the clans can see.</p><Btn variant="gold" disabled={g.materials < 15} onClick={() => up(foundCamp)}>Found camp in {r.name} (15 materials)</Btn></> :
+            <><p>Your camp is in <b>{REGIONS[g.camp.region].name}</b>{g.camp.region !== g.region && " — travel there to build."}</p>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(190px,1fr))", gap: 8 }}>
+                {Object.entries(CAMP_BUILDINGS).map(([k, B]) => <div key={k} style={{ padding: 10, borderRadius: 10, border: `1px solid ${g.camp.built[k] ? "#3ec995" : "rgba(255,255,255,0.12)"}` }}>
+                  <b>{B.name}</b><p style={{ fontSize: 11, margin: "4px 0 8px" }}>{B.desc}</p>
+                  {g.camp.built[k] ? <Tag color="#3ec995">Built</Tag> : <Btn small variant="gold" disabled={g.camp.region !== g.region} onClick={() => up(build, k)}>{Object.entries(B.cost).map(([a, v]) => `${v} ${a}`).join(", ")}</Btn>}
+                </div>)}
+              </div></>}
+          <p className="section-label" style={{ marginTop: 16 }}>Weapons</p>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(190px,1fr))", gap: 8 }}>
+            {WEAPONS.filter(w => w.id !== "fists").map(w => <div key={w.id} style={{ padding: 10, borderRadius: 10, border: `1px solid ${g.weapon === w.id ? "#3ec995" : "rgba(255,255,255,0.12)"}` }}>
+              <b>{w.name}</b> <span style={{ fontSize: 11, opacity: 0.6 }}>+{w.atk} ATK</span>
+              <p style={{ fontSize: 11, margin: "4px 0 8px" }}>{Object.entries(w.cost).map(([a, v]) => `${v} ${a}`).join(", ")}{w.needs ? " · needs a forge" : ""}</p>
+              {g.weapon === w.id ? <Tag color="#3ec995">Wielded</Tag> : <Btn small variant="amber" onClick={() => up(craftWeapon, w.id)}>Craft</Btn>}
+            </div>)}
+          </div>
+        </Panel>}
+
+        {tab === "marks" && <Panel style={{ borderColor: "#a89df0" }}>
+          <p style={{ fontSize: 12 }}>Techniques aren't taught or bought. They are what's left when your body is pushed past its limits and stays there.</p>
+          <div style={{ display: "grid", gap: 8 }}>
+            {TECHNIQUES.map(t => { const on = hasTech(g, t.id); return <div key={t.id} style={{ padding: 10, borderRadius: 10, border: `1px solid ${on ? "#3ec995" : "rgba(255,255,255,0.12)"}`, opacity: on ? 1 : 0.75 }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}><b style={{ color: on ? "#3ec995" : "#fff" }}>{t.name}</b><Tag color={on ? "#3ec995" : "#888"}>{on ? "Unlocked" : t.hint}</Tag></div>
+              <p style={{ fontSize: 11.5, margin: "4px 0 0" }}>{t.desc}</p>
+            </div>; })}
+          </div>
+          <p className="section-label" style={{ marginTop: 16 }}>Deeds</p>
+          {g.deeds.length === 0 ? <p style={{ color: "rgba(255,255,255,0.4)" }}>Nothing carved yet.</p> : g.deeds.map((d, i) => <p key={i} style={{ margin: "2px 0", fontSize: 12.5 }}>Day {d.day} — {d.text}</p>)}
+        </Panel>}
+      </main>
+      {journal}
+    </div>
+  </div>{eventOverlay}</div>;
 }
