@@ -3,7 +3,6 @@ export const RACES=[
   {id:"human",name:"Human",locked:false,desc:"Versatile.",flavor:"A blank slate.",hpBonus:0,atkBonus:0,defBonus:0,dodge:5,mpBonus:0,canSpell:true},
   {id:"equar",name:"Equar",locked:false,desc:"Small, sharp, fast.",flavor:"Reflexes second to none. Merchants.",hpBonus:-5,atkBonus:2,defBonus:0,dodge:28,mpBonus:0,canSpell:true,canMerchant:true},
   {id:"tetrabrachian",name:"Tetrabrachian",locked:false,desc:"Four-armed and powerfully built.",flavor:"Wields two weapons.",hpBonus:15,atkBonus:3,defBonus:1,dodge:5,mpBonus:0,canSpell:false},
-  {id:"lizardman",name:"Lizardman",locked:true,desc:"Locked indefinitely.",unlockHint:"Unique gameplay coming."},
   {
     id: "tenebrim",
     name: "Tenebrim",
@@ -16,7 +15,7 @@ export const RACES=[
     locked: false
   },
   {id:"devil",name:"Devil",locked:false,desc:"Starts in the Underworld.",flavor:"Innate elemental spells.",hpBonus:5,atkBonus:2,defBonus:1,dodge:8,mpBonus:40,canSpell:true},
-  {id:"beastkin",name:"Beastkin",locked:true,desc:"Locked indefinitely.",unlockHint:"Unique gameplay coming."},
+  {id:"beastkin",name:"Beastkin",locked:false,desc:"A Hero's creation. Choose a sub-type: Lizardman, Angelos, Melano, Lupin or Ursan.",flavor:"Keen senses, potent cores, poor control.",hpBonus:10,atkBonus:2,defBonus:2,dodge:10,mpBonus:0,canSpell:true},
   {
     id: "elf",
     name: "Elf",

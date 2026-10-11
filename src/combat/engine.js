@@ -117,6 +117,24 @@ export function doPlayerAction(state, action, targetUid, ctx) {
     return endPlayerTurn(s, ctx);
   }
 
+  if (action.heal) {
+    const h = Math.round(p.maxHp * action.heal);
+    p.hp = Math.min(p.maxHp, p.hp + h);
+    if (action.cleanse) { ["bleed", "burn", "acid", "blind", "weaken"].forEach(k => { delete p.statuses[k]; delete p.statuses[k + "Power"]; }); }
+    pushLog(s, `${action.name}: +${h} HP${action.cleanse ? ", afflictions shed" : ""}.`, "heal");
+    pushFx(s, "player", `+${h}`, "#3ec995");
+    if (!action.dmg) return endPlayerTurn(s, ctx);
+  }
+  // Wild, poorly-controlled mana (beastkin cores): sometimes it turns on you
+  if (action.backfire && Math.random() < action.backfire) {
+    const d = Math.max(1, Math.round(p.maxHp * 0.12));
+    p.hp = Math.max(0, p.hp - d);
+    pushLog(s, `${action.name}: your core lurches and the surge backfires! (-${d})`, "dmg");
+    pushFx(s, "player", `-${d}`, "#ff6bcb");
+    if (p.hp <= 0) { s.over = "lose"; pushLog(s, "You collapse.", "sys"); return s; }
+    return endPlayerTurn(s, ctx);
+  }
+
   if (!target) return s;
   if (target.intent?.airborne && !action.isSpell && !action.ranged) {
     pushLog(s, `${target.name} is out of reach! Only spells or ranged attacks can hit it now.`, "dmg");

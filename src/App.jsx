@@ -8,9 +8,10 @@ import Cinematic from "./cinematic/Cinematic";
 import DevilScenario, { newDevilState, rankOf } from "./DevilScenario";
 import EquarScenario from "./EquarScenario";
 import TenebrimScenario from "./TenebrimScenario";
+import BeastkinScenario from "./BeastkinScenario";
 
 // ── 1. Importera Ljud ──────────────────────────────────────────────────────
-import { SFX, stopBoss, playWaves, playLumen, playMenuBGM, playCombatBGM, stopBGM, playRaceBGM } from "./AudioEngine";
+import { SFX, stopBoss, playLumen, playMenuBGM, playCombatBGM, playDoomsdayBGM, stopBGM, playRaceBGM } from "./AudioEngine";
 
 // ── 2. Importera Speldata ──────────────────────────────────────────────────
 import { 
@@ -154,7 +155,8 @@ export default function App(){
   // Audio Router: Triggers BGM depending on current screen
   // Audio Router: Triggers BGM depending on current screen
   useEffect(()=>{
-    if(screen==="lumenari") { stopBGM(); playLumen(lumenariPhase); }
+    if(screen==="lumenari") { playLumen(lumenariPhase); }
+    else if(screen==="combat" && combat?.mode==="doomsday") { stopBoss(); playDoomsdayBGM(); }
     else if(["lumenari_intro","lumenari_outro","lumenari_lost"].includes(screen)) { stopBGM(); stopBoss(); }
     else if(["main_menu", "difficulty", "race", "origin", "class", "intro", "intro_ten", "devil_intro", "devil_class", "ten_slave", "ten_tribe"].includes(screen)) { 
       stopBoss(); 
@@ -162,7 +164,6 @@ export default function App(){
     }
     else if(screen==="combat" || screen==="colosseum") { 
       stopBoss(); 
-      stopBGM(); 
       playCombatBGM(); // Här startar den nya stridsmusiken!
     }
     else { 
@@ -175,7 +176,7 @@ export default function App(){
       }
     } 
     return()=>{};
-  },[screen, lumenariPhase, race]); // VIKTIGT: Vi la till 'race' i denna lista!
+  },[screen, lumenariPhase, race, combat?.mode]); // VIKTIGT: Vi la till 'race' i denna lista!
 
   // NY LOGIK: Global timer för legosoldater (tickar även i bakgrunden)
   useEffect(() => {
@@ -352,6 +353,7 @@ export default function App(){
       // FIX: Resume in correct scenario depending on race
       if (parsed.race?.id === "elf") setScreen("elf_scenario");
       else if (parsed.race?.id === "tenebrim") setScreen("tenebrim_survival");
+      else if (parsed.race?.id === "beastkin") setScreen("beastkin_scenario");
       else if (parsed.cls?.id === "merchant") setScreen("equar_scenario");
       else setScreen(parsed.race?.id === "devil" && !parsed.leftUnderworld ? "underworld" : "overworld");
       setTab("map");
@@ -366,6 +368,7 @@ export default function App(){
     localStorage.removeItem("aleria_elf_save"); 
     // Tenebrim addition: wipe standalone Tenebrim run state when starting a new game.
     localStorage.removeItem("aleria_tenebrim_save");
+    localStorage.removeItem("aleria_beastkin_save");
     
     setDiff(DIFFS[1]); setRace(null); setOrigin(null); setCls(null);
     setStats({hp:100,maxHp:100,mp:60,maxMp:60,stamina:80,maxStamina:80});
@@ -420,6 +423,7 @@ export default function App(){
     if (race?.id === "devil") { setSpells(DEVIL_SPELLS.map(s => ({ ...s }))); setScreen("devil_intro"); }
     else if (race?.id === "tenebrim") { setCls({id:"wanderer",name:"Wanderer",org:"Self-trained"}); setScreen("tenebrim_survival"); }
     else if (race?.id === "elf") { setScreen("elf_scenario"); }
+    else if (race?.id === "beastkin") { setCls({id:"villager",name:"Villager",org:"Hollowmere"}); setScreen("beastkin_scenario"); }
     else { setScreen("origin"); }
   }
 
@@ -874,7 +878,7 @@ export default function App(){
             
             {/* --- CONTINUE BUTTON (resume last save) --- */}
             {(() => {
-              const hasSave = !!localStorage.getItem("aleria_save_slot") || !!localStorage.getItem("aleria_elf_save") || !!localStorage.getItem("aleria_tenebrim_save");
+              const hasSave = !!localStorage.getItem("aleria_save_slot") || !!localStorage.getItem("aleria_elf_save") || !!localStorage.getItem("aleria_tenebrim_save") || !!localStorage.getItem("aleria_beastkin_save");
               return hasSave ? (
                 <div 
                   data-testid="main-menu-continue-btn"
@@ -1002,92 +1006,38 @@ export default function App(){
     </div>
   );
 
-  if(screen==="race") return (
-    <div style={{minHeight: "100vh", fontFamily: "var(--font-sans)", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "2rem"}}>
+  if(screen==="race") {
+    const CARDS=[
+      {id:"human",accent:"#7b6fe4",title:"Human",line:"Versatile.",flavor:"No gifts, no handicaps. Adventurer or Hunter — the classic contractor life, Doomsday and all.",tags:[["Spells","#a89df0"],["Guild or Hunter","#e0a523"]]},
+      {id:"equar",accent:"#e0a523",title:"Equar",line:"Small, sharp, fast.",flavor:"Reflexes second to none. Contractor — or Merchant, with a scenario of their own.",tags:[["+2 ATK","#e0a523"],["28% Dodge","#3ec995"],["Merchant","#ffd966"]]},
+      {id:"tetrabrachian",accent:"#e85c3a",title:"Tetrabrachian",line:"Four-armed, calm, enormous.",flavor:"Wields two weapons. No spells. The Colosseum awaits after the Doomsday.",tags:[["+15 HP","#e85c3a"],["+3 ATK","#e0a523"],["Dual wield","#7b6fe4"]]},
+      {id:"tenebrim",accent:"#b83a2a",title:"Tenebrim",line:"Coreless. Unbreakable.",flavor:"A survival campaign in Menfor: escape a slave pact or leave your clan, and break the Syndicate's fort.",tags:[["Scenario","#ff8c42"],["No mana","#b83a2a"],["Fury","#ff4d4d"]]},
+      {id:"devil",accent:"#c84838",title:"Devil",line:"Warden of the Underworld.",flavor:"Keep Sector Three's siphons running and delay the Doomsday from below. Veyrith, Kharvex or Syrakai.",tags:[["Scenario","#ff8c42"],["Innate spells","#a89df0"],["Beast companion","#ffb347"]]},
+      {id:"beastkin",accent:"#7fbf5a",title:"Beastkin",line:"A Hero's creation.",flavor:"One year in a trusting village that slavers have noticed. Lizardman, Angelos, Melano, Lupin or Ursan.",tags:[["Scenario","#ff8c42"],["5 sub-types","#7fbf5a"],["Wild Surge","#ff6bcb"]]},
+      {id:"elf",accent:"#87cefa",title:"Elf",line:"The endless winter.",flavor:"A Frostpunk-style survival city-builder in the Northern Expanse.",tags:[["Scenario","#ff8c42"],["Survival","#87cefa"]]},
+    ];
+    return (
+    <div style={{minHeight: "100vh", fontFamily: "var(--font-sans)", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "2rem 1rem"}}>
       <PastoralBG />
-      <div style={{position: "relative", zIndex: 10, width: "100%", maxWidth: 1000}}>
-        
-        <div style={{textAlign: "center", marginBottom: 40}}>
-          <h2 style={{fontSize: 42, fontWeight: 900, color: "#fff", textShadow: "0 0 20px rgba(255,255,255,0.5)", marginBottom: 10}}>Choose your race</h2>
-          <p style={{fontSize: 12, color: "rgba(255,255,255,0.4)", letterSpacing: "0.2em", textTransform: "uppercase", fontWeight: 600}}>Difficulty will be chosen next</p>
+      <div style={{position: "relative", zIndex: 10, width: "100%", maxWidth: 1100}}>
+        <div style={{textAlign: "center", marginBottom: 30}}>
+          <h2 style={{fontSize: "clamp(30px,5vw,42px)", fontWeight: 900, color: "#fff", textShadow: "0 0 20px rgba(255,255,255,0.5)", marginBottom: 10}}>Choose your race</h2>
+          <p style={{fontSize: 12, color: "rgba(255,255,255,0.45)", letterSpacing: "0.2em", textTransform: "uppercase", fontWeight: 600}}>Difficulty will be chosen next</p>
         </div>
-        
-        <div style={{display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 20}}>
-          
-          <div onClick={() => pickRace(RACES.find(r=>r.id==="human"))} style={{ position: "relative", background: "linear-gradient(180deg, rgba(40,20,60,0.8) 0%, rgba(20,10,35,0.9) 100%)", border: "1px solid rgba(123, 111, 228, 0.3)", borderRadius: 12, padding: "24px", cursor: "pointer", boxShadow: "0 4px 20px rgba(0,0,0,0.5)", transition: "all 0.2s", display: "flex", flexDirection: "column" }} onMouseOver={(e) => { e.currentTarget.style.transform = "scale(1.02)"; e.currentTarget.style.border = "1px solid rgba(123, 111, 228, 0.8)"; e.currentTarget.style.boxShadow = "0 0 25px rgba(123,111,228,0.2)"; }} onMouseOut={(e) => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.border = "1px solid rgba(123, 111, 228, 0.3)"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.5)"; }}>
-            <h3 style={{fontSize: 22, fontWeight: 800, color: "#fff", margin: "0 0 12px 0"}}>Human</h3>
-            <p style={{fontSize: 14, color: "rgba(255,255,255,0.8)", margin: "0 0 8px 0"}}>Versatile.</p>
-            <p style={{fontSize: 13, color: "rgba(255,255,255,0.4)", fontStyle: "italic", margin: "0 0 16px 0", flex: 1}}>A blank slate.</p>
-          </div>
-
-          <div onClick={() => pickRace(RACES.find(r=>r.id==="equar"))} style={{ position: "relative", background: "linear-gradient(180deg, rgba(40,20,60,0.8) 0%, rgba(20,10,35,0.9) 100%)", border: "1px solid rgba(123, 111, 228, 0.3)", borderRadius: 12, padding: "24px", cursor: "pointer", boxShadow: "0 4px 20px rgba(0,0,0,0.5)", transition: "all 0.2s", display: "flex", flexDirection: "column" }} onMouseOver={(e) => { e.currentTarget.style.transform = "scale(1.02)"; e.currentTarget.style.border = "1px solid rgba(123, 111, 228, 0.8)"; e.currentTarget.style.boxShadow = "0 0 25px rgba(123,111,228,0.2)"; }} onMouseOut={(e) => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.border = "1px solid rgba(123, 111, 228, 0.3)"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.5)"; }}>
-            <h3 style={{fontSize: 22, fontWeight: 800, color: "#fff", margin: "0 0 12px 0"}}>Equar</h3>
-            <p style={{fontSize: 14, color: "rgba(255,255,255,0.8)", margin: "0 0 8px 0"}}>Small, sharp, fast.</p>
-            <p style={{fontSize: 13, color: "rgba(255,255,255,0.4)", fontStyle: "italic", margin: "0 0 16px 0", flex: 1}}>Reflexes second to none. Merchants.</p>
-            <div style={{display: "flex", gap: 8, flexWrap: "wrap"}}>
-              <span style={{background: "rgba(224, 165, 35, 0.15)", border: "1px solid rgba(224, 165, 35, 0.5)", color: "#e0a523", fontSize: 11, padding: "4px 10px", borderRadius: 20, fontWeight: 700}}>+2 ATK</span>
-              <span style={{background: "rgba(62, 201, 149, 0.15)", border: "1px solid rgba(62, 201, 149, 0.5)", color: "#3ec995", fontSize: 11, padding: "4px 10px", borderRadius: 20, fontWeight: 700}}>28% Dodge</span>
-              <span style={{background: "rgba(255, 217, 102, 0.15)", border: "1px solid rgba(255, 217, 102, 0.5)", color: "#ffd966", fontSize: 11, padding: "4px 10px", borderRadius: 20, fontWeight: 700}}>Merchant</span>
-            </div>
-          </div>
-
-          <div onClick={() => pickRace(RACES.find(r=>r.id==="tetrabrachian"))} style={{ position: "relative", background: "linear-gradient(180deg, rgba(40,20,60,0.8) 0%, rgba(20,10,35,0.9) 100%)", border: "1px solid rgba(123, 111, 228, 0.3)", borderRadius: 12, padding: "24px", cursor: "pointer", boxShadow: "0 4px 20px rgba(0,0,0,0.5)", transition: "all 0.2s", display: "flex", flexDirection: "column" }} onMouseOver={(e) => { e.currentTarget.style.transform = "scale(1.02)"; e.currentTarget.style.border = "1px solid rgba(123, 111, 228, 0.8)"; e.currentTarget.style.boxShadow = "0 0 25px rgba(123,111,228,0.2)"; }} onMouseOut={(e) => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.border = "1px solid rgba(123, 111, 228, 0.3)"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.5)"; }}>
-            <h3 style={{fontSize: 22, fontWeight: 800, color: "#fff", margin: "0 0 12px 0"}}>Tetrabrachian</h3>
-            <p style={{fontSize: 14, color: "rgba(255,255,255,0.8)", margin: "0 0 8px 0"}}>Four-armed and powerfully built.</p>
-            <p style={{fontSize: 13, color: "rgba(255,255,255,0.4)", fontStyle: "italic", margin: "0 0 16px 0", flex: 1}}>Wields two weapons.</p>
-            <div style={{display: "flex", gap: 8, flexWrap: "wrap"}}>
-              <span style={{background: "rgba(184, 58, 42, 0.15)", border: "1px solid rgba(184, 58, 42, 0.5)", color: "#e85c3a", fontSize: 11, padding: "4px 10px", borderRadius: 20, fontWeight: 700}}>+15 HP</span>
-              <span style={{background: "rgba(224, 165, 35, 0.15)", border: "1px solid rgba(224, 165, 35, 0.5)", color: "#e0a523", fontSize: 11, padding: "4px 10px", borderRadius: 20, fontWeight: 700}}>+3 ATK</span>
-              <span style={{background: "rgba(123, 111, 228, 0.15)", border: "1px solid rgba(123, 111, 228, 0.5)", color: "#7b6fe4", fontSize: 11, padding: "4px 10px", borderRadius: 20, fontWeight: 700}}>+1 DEF</span>
-            </div>
-          </div>
-
-          <div onClick={() => pickRace(RACES.find(r=>r.id==="tenebrim"))} style={{ position: "relative", background: "linear-gradient(180deg, rgba(40,20,60,0.8) 0%, rgba(20,10,35,0.9) 100%)", border: "1px solid rgba(123, 111, 228, 0.3)", borderRadius: 12, padding: "24px", cursor: "pointer", boxShadow: "0 4px 20px rgba(0,0,0,0.5)", transition: "all 0.2s", display: "flex", flexDirection: "column" }} onMouseOver={(e) => { e.currentTarget.style.transform = "scale(1.02)"; e.currentTarget.style.border = "1px solid rgba(123, 111, 228, 0.8)"; e.currentTarget.style.boxShadow = "0 0 25px rgba(123,111,228,0.2)"; }} onMouseOut={(e) => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.border = "1px solid rgba(123, 111, 228, 0.3)"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.5)"; }}>
-            <h3 style={{fontSize: 22, fontWeight: 800, color: "#fff", margin: "0 0 12px 0"}}>Tenebrim</h3>
-            <p style={{fontSize: 14, color: "rgba(255,255,255,0.8)", margin: "0 0 8px 0"}}>A shadow-touched race.</p>
-            <p style={{fontSize: 13, color: "rgba(255,255,255,0.4)", fontStyle: "italic", margin: "0 0 16px 0", flex: 1}}>Physically imposing, but incapable of casting normal spells.</p>
-            <div style={{display: "flex", gap: 8, flexWrap: "wrap"}}>
-              <span style={{background: "rgba(184, 58, 42, 0.15)", border: "1px solid rgba(184, 58, 42, 0.5)", color: "#e85c3a", fontSize: 11, padding: "4px 10px", borderRadius: 20, fontWeight: 700}}>+25 HP</span>
-              <span style={{background: "rgba(224, 165, 35, 0.15)", border: "1px solid rgba(224, 165, 35, 0.5)", color: "#e0a523", fontSize: 11, padding: "4px 10px", borderRadius: 20, fontWeight: 700}}>+5 ATK</span>
-              <span style={{background: "rgba(123, 111, 228, 0.15)", border: "1px solid rgba(123, 111, 228, 0.5)", color: "#7b6fe4", fontSize: 11, padding: "4px 10px", borderRadius: 20, fontWeight: 700}}>+2 DEF</span>
-            </div>
-          </div>
-
-          <div onClick={() => pickRace(RACES.find(r=>r.id==="devil"))} style={{ position: "relative", background: "linear-gradient(180deg, rgba(40,20,60,0.8) 0%, rgba(20,10,35,0.9) 100%)", border: "1px solid rgba(123, 111, 228, 0.3)", borderRadius: 12, padding: "24px", cursor: "pointer", boxShadow: "0 4px 20px rgba(0,0,0,0.5)", transition: "all 0.2s", display: "flex", flexDirection: "column" }} onMouseOver={(e) => { e.currentTarget.style.transform = "scale(1.02)"; e.currentTarget.style.border = "1px solid rgba(123, 111, 228, 0.8)"; e.currentTarget.style.boxShadow = "0 0 25px rgba(123,111,228,0.2)"; }} onMouseOut={(e) => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.border = "1px solid rgba(123, 111, 228, 0.3)"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.5)"; }}>
-            <h3 style={{fontSize: 22, fontWeight: 800, color: "#fff", margin: "0 0 12px 0"}}>Devil</h3>
-            <p style={{fontSize: 14, color: "rgba(255,255,255,0.8)", margin: "0 0 8px 0"}}>Starts in the Underworld.</p>
-            <p style={{fontSize: 13, color: "rgba(255,255,255,0.4)", fontStyle: "italic", margin: "0 0 16px 0", flex: 1}}>Innate elemental spells.</p>
-            <div style={{display: "flex", gap: 8, flexWrap: "wrap"}}>
-              <span style={{background: "rgba(184, 58, 42, 0.15)", border: "1px solid rgba(184, 58, 42, 0.5)", color: "#e85c3a", fontSize: 11, padding: "4px 10px", borderRadius: 20, fontWeight: 700}}>+5 HP</span>
-              <span style={{background: "rgba(224, 165, 35, 0.15)", border: "1px solid rgba(224, 165, 35, 0.5)", color: "#e0a523", fontSize: 11, padding: "4px 10px", borderRadius: 20, fontWeight: 700}}>+2 ATK</span>
-              <span style={{background: "rgba(168, 157, 240, 0.15)", border: "1px solid rgba(168, 157, 240, 0.5)", color: "#a89df0", fontSize: 11, padding: "4px 10px", borderRadius: 20, fontWeight: 700}}>+40 MP</span>
-            </div>
-          </div>
-
-          {/* THE ONLY ELF CARD WE NEED! */}
-          <div onClick={() => {
-            const elfData = RACES.find(r=>r.id==="elf");
-            pickRace({...elfData, locked: false}); 
-          }} style={{ position: "relative", background: "linear-gradient(180deg, rgba(40,20,60,0.8) 0%, rgba(20,10,35,0.9) 100%)", border: "1px solid rgba(135, 206, 250, 0.4)", borderRadius: 12, padding: "24px", cursor: "pointer", boxShadow: "0 4px 20px rgba(0,0,0,0.5)", transition: "all 0.2s", display: "flex", flexDirection: "column" }} onMouseOver={(e) => { e.currentTarget.style.transform = "scale(1.02)"; e.currentTarget.style.border = "1px solid rgba(135, 206, 250, 0.9)"; e.currentTarget.style.boxShadow = "0 0 30px rgba(135,206,250,0.3)"; }} onMouseOut={(e) => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.border = "1px solid rgba(135, 206, 250, 0.4)"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.5)"; }}>
-            <div style={{display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12}}>
-              <h3 style={{fontSize: 22, fontWeight: 800, color: "#fff", margin: 0}}>Elf</h3>
-              <span style={{color: "#87cefa", fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", background: "rgba(135,206,250,0.15)", padding: "2px 6px", borderRadius: 4}}>FROSTPUNK-ESQUE</span>
-            </div>
-            <p style={{fontSize: 14, color: "rgba(255,255,255,0.8)", margin: "0 0 8px 0"}}>A harsh Frostpunk-style survival scenario.</p>
-            <p style={{fontSize: 13, color: "rgba(255,255,255,0.4)", fontStyle: "italic", margin: "0 0 16px 0", flex: 1}}>Unique technology and survival mechanics.</p>
-          </div>
-
+        <div style={{display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16}}>
+          {CARDS.map(c=>{const r=RACES.find(x=>x.id===c.id);return <div key={c.id} className="choice-card" data-testid={`race-${c.id}`} style={{"--accent":`${c.accent}55`,"--accent-strong":c.accent,"--glow":`${c.accent}40`,display:"flex",flexDirection:"column"}} onClick={()=>pickRace({...r,locked:false})}>
+            <h3 style={{fontSize: 22, fontWeight: 800, color: "#fff", margin: "0 0 6px"}}>{c.title}</h3>
+            <p style={{fontSize: 14, color: c.accent, margin: "0 0 8px", fontWeight: 700}}>{c.line}</p>
+            <p style={{fontSize: 13, color: "rgba(255,255,255,0.6)", margin: "0 0 14px", flex: 1, lineHeight: 1.55}}>{c.flavor}</p>
+            <div style={{display: "flex", gap: 6, flexWrap: "wrap"}}>{c.tags.map(([t,col])=><span key={t} className="pill" style={{color:col,borderColor:`${col}88`,background:`${col}18`}}>{t}</span>)}</div>
+          </div>;})}
         </div>
-        
-        <div style={{textAlign: "center", marginTop: 40}}>
-          <button onClick={() => { if(window.SFX && window.SFX.menuBack) window.SFX.menuBack(); setScreen("main_menu"); }} style={{background: "transparent", border: "none", color: "rgba(255,255,255,0.5)", fontSize: 14, cursor: "pointer", padding: "10px", transition: "color 0.2s"}} onMouseOver={(e) => e.target.style.color = "#fff"} onMouseOut={(e) => e.target.style.color = "rgba(255,255,255,0.5)"}>
-            ← Back to Main Menu
-          </button>
+        <div style={{textAlign: "center", marginTop: 30}}>
+          <button onClick={() => { if(window.SFX && window.SFX.menuBack) window.SFX.menuBack(); setScreen("main_menu"); }} className="link-btn">← Back to Main Menu</button>
         </div>
-
       </div>
     </div>
-  );
+  );}
 
 if(showVictory)return <div style={{minHeight:"100vh",background:"linear-gradient(180deg,#1a0530,#3a0a4a,#1a0530)",fontFamily:"var(--font-sans)"}}><Confetti/><div style={{position:"relative",zIndex:60,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"2rem 1.5rem"}}>
     <div style={{maxWidth:560,textAlign:"center",background:"rgba(0,0,0,0.55)",padding:"40px 32px",borderRadius:18,border:"2px solid #ffd966",boxShadow:"0 0 60px rgba(255,217,102,0.5)",backdropFilter:"blur(10px)"}}>
@@ -1111,6 +1061,9 @@ if (screen === "devil_scenario") {
   }
   if (screen === "equar_scenario") {
       return <EquarScenario setScreen={setScreen} bronze={bronze} setBronze={setBronze} notify={notify} diff={diff} />
+  }
+  if (screen === "beastkin_scenario") {
+      return <BeastkinScenario setScreen={setScreen} notify={notify} setStats={setStats} diff={diff} exportSave={exportSave} />;
   }
   if (screen === "tenebrim_survival") {
       return <TenebrimScenario setScreen={setScreen} notify={notify} stats={stats} setStats={setStats} diff={diff} exportSave={exportSave} />;

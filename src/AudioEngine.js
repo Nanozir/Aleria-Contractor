@@ -179,8 +179,7 @@ export function startBossMusic(phase = 1) {
 
 export function playWaves() { nz(2, 0.1, 100); }
 export function playLumen(phase) { 
-  startBossMusic(phase);
-  tn(100 + (phase * 50), "sawtooth", 2, 0.2); 
+  playTrack(asset("audio/lumenari_bgm.mp3"), () => { startBossMusic(phase); tn(100 + (phase * 50), "sawtooth", 2, 0.2); });
 }
 
 
@@ -192,15 +191,23 @@ export function playMenuBGM() {
     playTrack(asset("audio/menu_bgm.mp3")); 
 }
 
-export function playTrack(trackUrl) {
+// fallback: called if the file can't be loaded (e.g. a track that hasn't been added to public/audio yet)
+const missingTracks = new Set();
+export function playTrack(trackUrl, fallback) {
+    if (missingTracks.has(trackUrl)) { if (fallback) fallback(); return; }
     if (currentTrackUrl === trackUrl && currentBGM) return; 
     stopBGM(); 
     try {
         currentTrackUrl = trackUrl; 
-        currentBGM = new Audio(trackUrl);
-        currentBGM.loop = true;
-        currentBGM.volume = 0.3 * VOLUMES.master * VOLUMES.bgm; 
-        currentBGM.play().catch(e => console.warn("Audio autoplay blocked:", e));
+        const audio = new Audio(trackUrl);
+        currentBGM = audio;
+        audio.loop = true;
+        audio.volume = 0.3 * VOLUMES.master * VOLUMES.bgm; 
+        audio.addEventListener("error", () => {
+            missingTracks.add(trackUrl);
+            if (currentBGM === audio) { currentBGM = null; currentTrackUrl = null; if (fallback) fallback(); }
+        });
+        audio.play().catch(e => console.warn("Audio autoplay blocked:", e));
     } catch (e) {
         console.error("Audio playback error:", e);
     }
@@ -215,19 +222,24 @@ export function stopBGM() {
     currentTrackUrl = null; 
 }
 
+// Race / scenario exploration music. Missing files fall back to the menu theme.
+// See docs/MUSIC_BRIEF_FOR_GEMINI.md for the tracks that are still wanted.
 export function playRaceBGM(raceId) {
     const raceTracks = {
-        equar: asset("audio/equar_bgm.mp3"),
-        tenebrim: asset("audio/tenebrim_bgm.mp3"),
-        elf: asset("audio/elf_bgm.mp3") // <-- Lägg till ett dedikerat spår för alverna här
+        equar: "audio/equar_bgm.mp3",
+        tenebrim: "audio/tenebrim_bgm.mp3",
+        elf: "audio/elf_bgm.mp3",
+        devil: "audio/underworld_bgm.mp3",
+        beastkin: "audio/beastkin_bgm.mp3",
     };
-    if (raceTracks[raceId]) {
-        playTrack(raceTracks[raceId]);
-    } else {
-        stopBGM();
-    }
+    if (raceTracks[raceId]) playTrack(asset(raceTracks[raceId]), () => playTrack(asset("audio/menu_bgm.mp3")));
+    else stopBGM();
 }
 
 export function playCombatBGM() {
     playTrack(asset("audio/combat_bgm.mp3")); 
+}
+
+export function playDoomsdayBGM() {
+    playTrack(asset("audio/doomsday_bgm.mp3"), () => playCombatBGM());
 }

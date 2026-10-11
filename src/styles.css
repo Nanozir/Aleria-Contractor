@@ -702,3 +702,12 @@ strong, b { color: var(--text); }
 .ten-map text { font-family: Georgia, serif; pointer-events: none; }
 .ten-pulse { animation: tenPulse 1.4s ease-in-out infinite; transform-origin: center; transform-box: fill-box; }
 @keyframes tenPulse { 0%,100% { opacity: .3; } 50% { opacity: 1; } }
+
+/* Beastkin year timeline */
+.bk-year { display: flex; gap: 4px; }
+.bk-year span { flex: 1; height: 8px; border-radius: 4px; background: color-mix(in srgb, var(--c) 18%, transparent); border: 1px solid color-mix(in srgb, var(--c) 35%, transparent); }
+.bk-year span.past { background: color-mix(in srgb, var(--c) 55%, transparent); }
+.bk-year span.now { background: var(--c); box-shadow: 0 0 10px var(--c); }
+.bk-year span.harvest { outline: 2px solid #e85c3a; outline-offset: 1px; }
+.link-btn { background: transparent; border: none; color: rgba(255,255,255,0.5); font-size: 14px; cursor: pointer; padding: 10px; transition: color .2s; }
+.link-btn:hover { color: #fff; }
