@@ -1,6 +1,11 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Btn, Tag, Bar, Confetti } from "./UIComponents";
 import { asset } from "./assets";
+import { TACTICS } from "./GameData";
+import CombatScreen from "./combat/CombatScreen";
+import Cinematic from "./cinematic/Cinematic";
+import { makeEnemy } from "./combat/engine";
+import { elfEnemyTemplate, elfActions } from "./elf/enemies";
 
 export default function ElfScenario({ setScreen, notify, stats, setStats, diff }) {
   const playClick = () => { if (window.SFX && window.SFX.click) window.SFX.click(); };
@@ -339,42 +344,33 @@ const OBJECTIVES = [
 
   // --- SEQUENCERS ---
   useEffect(() => {
-    if (phase === "intro") {
-      if (window.SFX && window.SFX.elfIntro) window.SFX.elfIntro(); 
-      const seq = [{s: 1, d: 1000}, {s: 2, d: 5000}, {s: 3, d: 10000}, {s: 4, d: 15000}];
-      seq.forEach(({ s, d }) => setTimeout(() => setAnimStep(s), d));
-      const endTimer = setTimeout(() => setPhase("outpost"), 20000);
-      return () => clearTimeout(endTimer);
-    }
-    if (phase === "town_cinematic") {
-      setAnimStep(1); setTimeout(() => setAnimStep(2), 4000);
-      setTimeout(() => { setPhase("outpost"); addLog("Town established. Population mechanics unlocked.", "reward"); setPopulation(15); setCitizens(Array.from({length: 15}, () => generateCitizen())); }, 14000);
-    }
-    if (phase === "giant_cutscene") {
-      if (window.SFX && window.SFX.roar) window.SFX.roar();
-      const seq = [{s: 1, d: 1000}, {s: 2, d: 5000}, {s: 3, d: 10000}, {s: 4, d: 16000}];
-      seq.forEach(({ s, d }) => setTimeout(() => setAnimStep(s), d));
-      const endTimer = setTimeout(() => {
-          setPhase("outpost"); setGiantPhase(1); setPopulation(p => Math.floor(p / 2)); setTownProgress(p => p + 1);
-          addLog("Half the town was crushed. Skyspine schematics recovered.", "dmg");
-      }, 23000);
-      return () => clearTimeout(endTimer);
-    }
-    if (phase === "victory_anim") {
-      if (window.SFX && window.SFX.lumen) window.SFX.lumen();
-      setTimeout(() => { setPhase("victory"); localStorage.removeItem("aleria_elf_save"); }, 6000);
-    }
+    // Cutscenes (intro, town_cinematic, giant_cutscene, victory_anim) are rendered with <Cinematic>,
+    // which owns its timers and calls the finish functions below exactly once.
+    if (phase === "intro" && window.SFX && window.SFX.elfIntro) window.SFX.elfIntro();
+    if (phase === "giant_cutscene" && window.SFX && window.SFX.roar) window.SFX.roar();
+    if (phase === "victory_anim" && window.SFX && window.SFX.lumen) window.SFX.lumen();
   }, [phase]);
 
+  const finishTownCinematic = () => { setPhase("outpost"); addLog("Town established. Population mechanics unlocked.", "reward"); setPopulation(15); setCitizens(Array.from({length: 15}, () => generateCitizen())); };
+  const finishGiantCutscene = () => { setPhase("outpost"); setGiantPhase(1); setPopulation(p => Math.floor(p / 2)); setTownProgress(p => p + 1); addLog("Half the town was crushed. Skyspine schematics recovered.", "dmg"); };
+
   // --- GIANT QTE MECHANICS ---
+  // The giant telegraphs each attack; the player has to read it and pick the right evasion.
+  const GIANT_MOVES = [
+    { k: 'd', p: 'A fist comes crashing down on your LEFT…', arm: true, icon: '✊ ⟵' },
+    { k: 'a', p: 'A fist comes crashing down on your RIGHT…', arm: true, icon: '⟶ ✊' },
+    { k: 'w', p: 'It sweeps a frozen pine low across the ground!', icon: '〰' },
+    { k: 's', p: 'It lunges forward, hand open to GRAB you!', icon: '✋' },
+    { k: 'a', p: 'A foot lifts to STOMP down on your RIGHT…', icon: '⟶ 🦶' },
+    { k: 'd', p: 'A foot lifts to STOMP down on your LEFT…', icon: '🦶 ⟵' },
+  ];
   const triggerNextQte = () => {
-    const keys = [
-      { k: 'w', p: 'GIANT STOMPS! Press [W] to Grapple Up!' },
-      { k: 'a', p: 'GIANT SWEEPS! Press [A] to Dodge Left!' },
-      { k: 'd', p: 'GIANT SMASHES! Press [D] to Dodge Right!' },
-      { k: 's', p: 'GIANT GRABS! Press [S] to Slide!' }
-    ];
-    setQte({ ...keys[Math.floor(Math.random() * keys.length)], time: 100 });
+    setGiantCombat(gc => {
+      const pool = GIANT_MOVES.filter(m => !(gc?.disabledArm && m.arm));
+      const mv = pool[Math.floor(Math.random() * pool.length)];
+      setQte({ ...mv, time: 100, speed: gc?.slowed ? 3 : 5 });
+      return gc;
+    });
   };
 
   const processQteInput = (keyHit) => {
@@ -412,7 +408,8 @@ const OBJECTIVES = [
   useEffect(() => {
     if (phase !== 'giant_combat' || !qte || giantVictory) return;
     const handleKey = (e) => {
-       const k = e.key.toLowerCase();
+       const map = { arrowup: 'w', arrowleft: 'a', arrowdown: 's', arrowright: 'd' };
+       const k = map[e.key.toLowerCase()] || e.key.toLowerCase();
        if (['w','a','s','d'].includes(k)) { e.preventDefault(); processQteInput(k); }
     };
     window.addEventListener('keydown', handleKey);
@@ -424,8 +421,8 @@ const OBJECTIVES = [
     const tick = setInterval(() => {
        setQte(prev => {
           if (!prev) return null;
-          if (prev.time <= 5) { handleQteFail("Too slow!"); return null; }
-          return { ...prev, time: prev.time - 5 };
+          if (prev.time <= (prev.speed || 5)) { handleQteFail("Too slow!"); return null; }
+          return { ...prev, time: prev.time - (prev.speed || 5) };
        });
     }, 100);
     return () => clearInterval(tick);
@@ -619,7 +616,7 @@ const OBJECTIVES = [
         choices: [
           { label: "Engage in Combat", req: true, color: "normal", action: () => { 
              playClick(); setActiveEvent(null);
-             setExpCombat({ name: e.n, hp: e.hp, maxHp: e.hp, playerDefending: false, logs: [{msg: `You draw your weapon against the ${e.n}!`, type: "sys", id: Date.now()}] });
+             setExpCombat({ key: Date.now() + Math.random(), name: e.n, hp: e.hp, maxHp: e.hp, playerDefending: false, logs: [{msg: `You draw your weapon against the ${e.n}!`, type: "sys", id: Date.now()}] });
              setPhase("exploration_combat");
           } },
           { label: "Flee in panic", req: true, color: "danger", action: () => { playClick(); setTemp(t=>Math.max(0, t-20)); setEnergy(eng=>Math.max(0, eng-20)); addLog("You escaped, but exhausted yourself.", "dmg"); setActiveEvent(null); } }
@@ -1143,55 +1140,10 @@ const OBJECTIVES = [
     } else if (cell === 3) { 
        newGrid[ny][nx] = 0;
        const e = maze.pool[Math.floor(Math.random() * maze.pool.length)];
-       setExpCombat({ name: e.n, hp: e.hp, maxHp: e.hp, playerDefending: false, logs: [{msg: `A hostile ${e.n} attacks!`, type: "dmg", id: Date.now()}] });
+       setExpCombat({ key: Date.now() + Math.random(), name: e.n, hp: e.hp, maxHp: e.hp, playerDefending: false, logs: [{msg: `A hostile ${e.n} attacks!`, type: "dmg", id: Date.now()}] });
        setPhase("exploration_combat");
     }
     setMaze(nextMaze);
-  };
-
-  const doExpCombatAction = (act) => {
-    playClick();
-    let nEc = { ...expCombat };
-    const addLog = (msg, type="info") => nEc.logs = [...nEc.logs.slice(-5), {msg, type, id: Date.now()+Math.random()}];
-    nEc.playerDefending = (act === "defend");
-
-    if (act === "attack") {
-      let dmg = 15 + Math.floor(Math.random()*15); 
-      if (equipment.weapon === 'scrap_blade') dmg = 35 + Math.floor(Math.random()*20);
-      if (equipment.weapon === 'mana_rifle') dmg = 75 + Math.floor(Math.random()*30);
-      nEc.hp -= dmg; addLog(`You strike for ${dmg} damage!`, "reward");
-      if (window.SFX && window.SFX.attack) window.SFX.attack();
-    } else if (act === "defend") { addLog("You brace yourself, raising your guard.", "sys");
-    } else if (act === "flee") {
-      addLog("You fled the battle.", "dmg"); setExpCombat(nEc);
-      // FIX: When fleeing combat in maze, return to maze (state already saved in maze state)
-      if (maze) setTimeout(() => setPhase("exploring"), 1000); else setTimeout(() => setPhase("outpost"), 1000);
-      return;
-    }
-
-    if (nEc.hp <= 0) {
-       addLog(`Victory! The ${nEc.name} is slain.`, "heal"); setExpCombat(nEc);
-       setTimeout(() => { 
-         setMaterials(m => m + 15); notify("Looted 15 Materials!", "#ffd966"); 
-         if (maze) setPhase("exploring"); else setPhase("outpost"); 
-       }, 1500); return;
-    }
-    setExpCombat(nEc);
-
-    setTimeout(() => {
-      setExpCombat(ec => {
-          let nextEc = { ...ec };
-          const addEnemyLog = (msg, type="info") => nextEc.logs = [...nextEc.logs.slice(-5), {msg, type, id: Date.now()+Math.random()}];
-          let baseDmg = 10 + Math.floor(Math.random() * 8); 
-          if (equipment.armor === 'plated') baseDmg = Math.floor(baseDmg * 0.5); 
-          const finalDmg = nextEc.playerDefending ? Math.floor(baseDmg * 0.3) : baseDmg;
-          
-          setHp(h => { const newHp = Math.max(0, h - finalDmg); if(newHp <= 0) setTimeout(()=>handleDeath(`Slain by a ${nextEc.name}`), 500); return newHp; });
-          if (window.SFX && window.SFX.hit) window.SFX.hit();
-          addEnemyLog(`The ${nextEc.name} attacks, dealing ${finalDmg} damage!`, "dmg");
-          return nextEc;
-      });
-    }, 800);
   };
 
   // Common styles for the Advanced Tech Tree
@@ -1204,51 +1156,39 @@ const OBJECTIVES = [
 
   // --- RENDER PHASES ---
   if (phase === "intro") {
-    return (
-      <div className="snowstorm-container" style={{ display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "serif", color: "#fff", textAlign: "center", padding: "2rem" }}>
-        <div className="snow-layer" /><div className="snow-layer" /><div className="snow-layer" />
-        {animStep === 1 && <h2 className="elf-fade-in" style={{ fontSize: 28, fontWeight: "normal", letterSpacing: "2px" }}>A biting wind cuts through heavy, unfamiliar furs.</h2>}
-        {animStep === 2 && <h2 className="elf-fade-in" style={{ fontSize: 28, fontWeight: "normal", letterSpacing: "2px" }}>The Federation has fallen to the winter. You are wandering... lost.</h2>}
-        {animStep === 3 && <h2 className="elf-fade-in" style={{ fontSize: 28, fontWeight: "normal", letterSpacing: "2px" }}>Through the whiteout, a colossal shadow emerges.</h2>}
-        {animStep === 4 && <h2 className="elf-fade-in" style={{ fontSize: 28, fontWeight: "normal", letterSpacing: "2px", color: "#ff8c00", textShadow: "0 0 20px #ff8c00" }}>An ancient complex. Orange light pulses within the frozen stone.</h2>}
-        <button onClick={() => { playClick(); setPhase("outpost"); }} style={{ position: "fixed", top: 40, right: 40, background: "transparent", color: "rgba(255,255,255,0.4)", border: "none", cursor: "pointer", fontSize: 16, letterSpacing: "2px", zIndex: 9999, transition: "color 0.2s" }} onMouseOver={e=>e.currentTarget.style.color="#fff"} onMouseOut={e=>e.currentTarget.style.color="rgba(255,255,255,0.4)"}>SKIP ❯</button>
-      </div>
-    );
+    return <Cinematic onDone={() => setPhase("outpost")} shots={[
+      { text: "A biting wind cuts through heavy, unfamiliar furs.", bg: "radial-gradient(ellipse at 50% 30%, #2a3a4a 0%, #05080c 70%)", fx: ["blizzard", "fog"], color: "#e8f4ff", duration: 5000 },
+      { text: "The Northern Expanse. Once, it wasn't always winter here.", sub: "During a past Doomsday, a Star-6 monster froze the whole continent. It never thawed.", bg: "radial-gradient(ellipse at 50% 60%, #1a2a3a 0%, #03050a 70%)", fx: ["snow", "fog"], color: "#c8e0ff", duration: 6600 },
+      { text: "The Federation has gone silent. You are wandering… lost.", bg: "radial-gradient(ellipse at 50% 40%, #1a2028 0%, #020306 70%)", fx: ["blizzard"], color: "#d8e8f8", duration: 5000 },
+      { text: "Through the whiteout, a colossal shadow emerges.", bg: "radial-gradient(ellipse at 50% 70%, #2a3040 0%, #020306 70%)", fx: ["blizzard", "shake"], color: "#ffffff", duration: 4600 },
+      { text: "An Ancient complex. Orange light pulses inside the frozen stone.", sub: "The elves survived by digging these up and learning what they did. So will you.", bg: "radial-gradient(circle at 50% 55%, #6a3008 0%, #1a0c04 30%, #020306 70%)", fx: ["snow", "pulse"], color: "#ff9a3a", duration: 6400 },
+    ]} />;
   }
 
   if (phase === "town_cinematic") {
-    return (
-      <div className="cinematic-overlay">
-        <div className="cinematic-core" />
-        {animStep >= 1 && <h1 className="cinematic-text-1">MONTHS LATER...</h1>}
-        {animStep >= 2 && <p className="cinematic-text-2">Through sweat, blood, and ancient blueprints, you have shaped the ruins into a functioning settlement. The core breathes. The ice retreats.</p>}
-        <button onClick={() => { playClick(); setPhase("outpost"); addLog("Town established. Population mechanics unlocked.", "reward"); setPopulation(15); setCitizens(Array.from({length: 15}, () => generateCitizen())); }} style={{ position: "fixed", top: 40, right: 40, background: "transparent", color: "rgba(255,255,255,0.4)", border: "none", cursor: "pointer", fontSize: 16, letterSpacing: "2px", zIndex: 9999, transition: "color 0.2s" }} onMouseOver={e=>e.currentTarget.style.color="#fff"} onMouseOut={e=>e.currentTarget.style.color="rgba(255,255,255,0.4)"}>SKIP ❯</button>
-      </div>
-    );
+    return <Cinematic onDone={finishTownCinematic} shots={[
+      { text: "Months later…", bg: "radial-gradient(ellipse at 50% 50%, #1a2a3a 0%, #03050a 70%)", fx: ["snow"], color: "#c8e0ff", duration: 3600 },
+      { text: "Through sweat, blood and Ancient blueprints, the ruins have become a settlement.", sub: "Fifteen survivors answered the generator's light.", bg: "radial-gradient(circle at 50% 60%, #6a3008 0%, #1a0c04 35%, #020306 75%)", fx: ["snow", "pulse"], color: "#ffc890", duration: 6000 },
+      { text: "The core breathes. The ice retreats — a little.", bg: "radial-gradient(circle at 50% 50%, #ff9a3a 0%, #4a2008 25%, #020306 70%)", fx: ["pulse", "embers"], color: "#ffe0b0", duration: 4800 },
+    ]} />;
   }
 
   if (phase === "giant_cutscene") {
-    return (
-      <div className="cinematic-overlay giant-shake" style={{ background: "#1a0505" }}>
-        <div className="snow-layer" style={{ backgroundSize: "600px 600px", animation: "snowAnim 2s linear infinite" }}/>
-        {animStep >= 1 && <h1 className="giant-text">The ground quakes. The generator hum is drowned out by a deafening roar.</h1>}
-        {animStep >= 2 && <h1 className="giant-text" style={{ marginTop: 40, color: "#ffc8b0" }}>Colossal figures emerge from the whiteout. Frost Giants. They step over your perimeter walls like they aren't even there.</h1>}
-        {animStep >= 3 && <h1 className="giant-text" style={{ marginTop: 40 }}>Heavy casualties. But amidst the ruin, a dying engineer hands you a sealed datapad.</h1>}
-        {animStep >= 4 && <h1 className="giant-text" style={{ marginTop: 40, color: "#87cefa", textShadow: "0 0 30px #87cefa" }}>Schematics for the 'Skyspine Harness'. An exo-rig designed to mount heavy artillery. It is time to fight back.</h1>}
-        <button onClick={() => { playClick(); setPhase("outpost"); setGiantPhase(1); setPopulation(p => Math.floor(p / 2)); setTownProgress(p => p + 1); addLog("Half the town was crushed. Skyspine schematics recovered.", "dmg"); }} style={{ position: "fixed", top: 40, right: 40, background: "transparent", color: "rgba(255,255,255,0.4)", border: "none", cursor: "pointer", fontSize: 16, letterSpacing: "2px", zIndex: 9999, transition: "color 0.2s" }} onMouseOver={e=>e.currentTarget.style.color="#fff"} onMouseOut={e=>e.currentTarget.style.color="rgba(255,255,255,0.4)"}>SKIP ❯</button>
-      </div>
-    );
+    return <Cinematic onDone={finishGiantCutscene} shots={[
+      { text: "The ground quakes. The generator's hum is drowned out by a roar.", bg: "radial-gradient(ellipse at 50% 80%, #3a1010 0%, #0a0303 70%)", fx: ["blizzard", "shake"], color: "#ffd0c0", duration: 5000 },
+      { text: "Frost Giants.", sub: "They step over your perimeter walls like they aren't there.", bg: "radial-gradient(ellipse at 50% 30%, #2a3a4a 0%, #05080c 70%)", fx: ["blizzard", "shake", "flash"], color: "#ffffff", duration: 5000 },
+      { text: "Heavy casualties. Half the town, gone under ice and stone.", bg: "radial-gradient(circle, #4a0808 0%, #000 70%)", fx: ["snow", "vignette-red"], color: "#ff9a8a", duration: 5000 },
+      { text: "A dying engineer presses a sealed datapad into your hands.", bg: "radial-gradient(ellipse at 50% 60%, #1a2a3a 0%, #03050a 70%)", fx: ["snow"], color: "#c8e0ff", duration: 4800 },
+      { text: "Schematics for the Skyspine Harness. An exo-rig built to carry heavy artillery.", sub: "It is time to fight back.", bg: "radial-gradient(circle at 50% 50%, #87cefa 0%, #1a3a5a 25%, #020306 70%)", fx: ["pulse", "flash"], color: "#87cefa", duration: 5600 },
+    ]} />;
   }
 
   if (phase === "victory_anim") {
-    return (
-      <div className="skyspine-beam-container" style={{ background: "#05080f" }}>
-         <Confetti />
-         <h1 className="skyspine-text" style={{ color: "#3ec995", textShadow: "0 0 40px #3ec995" }}>THE ENDLESS WINTER IS OVER</h1>
-         <p style={{ position: "absolute", top: "60%", width: "100%", textAlign: "center", color: "#fff", fontSize: 20 }}>You have conquered the frost.</p>
-         <Btn style={{ position: "absolute", top: "75%", left: "50%", transform: "translateX(-50%)" }} onClick={() => { playClick(); setScreen("main_menu"); }}>Return to Menu</Btn>
-      </div>
-    );
+    return <Cinematic onDone={() => { setPhase("victory"); localStorage.removeItem("aleria_elf_save"); setScreen("main_menu"); }} shots={[
+      { text: "The last giant falls. The storm… stops.", bg: "radial-gradient(ellipse at 50% 40%, #2a3a4a 0%, #05080c 70%)", fx: ["snow"], color: "#e8f4ff", duration: 4800 },
+      { text: "For the first time in living memory, there is sun on the Northern Expanse.", bg: "radial-gradient(circle at 50% 20%, #fff8d0 0%, #87cefa 25%, #0a1828 70%)", fx: ["rays", "motes"], color: "#fff8d0", duration: 5600 },
+      { text: "THE ENDLESS WINTER IS OVER", sub: "You have conquered the frost.", bg: "radial-gradient(circle at 50% 40%, #3ec995 0%, #0a2a1a 35%, #020306 75%)", fx: ["flash", "rays", "motes"], color: "#3ec995", duration: 6000 },
+    ]} />;
   }
 
   if (phase === "capital_finale") {
@@ -1430,30 +1370,23 @@ const OBJECTIVES = [
   }
           
   if (phase === "exploration_combat" && expCombat) {
-    return (
-      <div style={{ minHeight: "100vh", background: "#0a0606", fontFamily: "var(--font-sans)", padding: "20px" }}>
-        <div style={{ maxWidth: 600, margin: "0 auto", display: "flex", flexDirection: "column", gap: 20 }}>
-          <div className="frost-panel" style={{ padding: 20, textAlign: "center", borderColor: "#e85c3a" }}>
-            <h2 style={{ color: "#e85c3a", margin: "0 0 10px", letterSpacing: "2px" }}>{expCombat.name}</h2>
-            <Bar val={Math.max(0, expCombat.hp)} max={expCombat.maxHp} color="#e85c3a" h={12} />
-            <p style={{ color: "rgba(255,255,255,0.5)", margin: "10px 0 0 0", fontSize: 12 }}>Enemy Health</p>
-          </div>
-          <div className="frost-panel" style={{ padding: 20, minHeight: 200 }}>
-            {expCombat.logs.map(l => <div key={l.id} style={{ color: l.type === "dmg" ? "#e85c3a" : l.type === "reward" ? "#ffd966" : l.type === "sys" ? "#a89df0" : "rgba(255,255,255,0.8)", marginBottom: 10, fontSize: 15 }}>{l.msg}</div>)}
-          </div>
-          <div className="frost-panel" style={{ padding: 20, borderColor: "#3ec995" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 15 }}>
-              <h3 style={{ margin: 0, color: "#3ec995" }}>Player HP</h3><span style={{ fontSize: 18, color: "#fff", fontWeight: "bold" }}>{hp}</span>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-              <Btn variant="primary" onClick={() => doExpCombatAction("attack")}>Attack</Btn>
-              <Btn variant="ghost" onClick={() => doExpCombatAction("defend")}>Defend</Btn>
-              <Btn variant="danger" onClick={() => doExpCombatAction("flee")}>Flee Fight</Btn>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+    const leave = () => { setExpCombat(null); setPhase(maze ? "exploring" : "outpost"); };
+    const done = expCombat.result;
+    return <CombatScreen key={expCombat.key || expCombat.name}
+      initialEnemies={[makeEnemy(elfEnemyTemplate(expCombat.name, expCombat.maxHp), { hp: diff?.hpMult || 1, atk: diff?.enemyAtk || 1 })]}
+      player={{ hp, maxHp, mp: 0, maxMp: 0, stamina: energy, maxStamina: 100 }}
+      ctx={{ atk: 0, def: equipment.armor === "plated" ? 22 : 4, dodge: 8, crit: 0.1 }}
+      actions={[...elfActions(equipment.weapon), ...TACTICS]}
+      title="EXPEDITION" subtitle={expCombat.name}
+      background="radial-gradient(ellipse at top,#16283a 0%,#04070c 70%)"
+      onFlee={() => { setTemp(t => Math.max(0, t - 15)); addLog("You fled the fight. The cold bit deeper on the way.", "dmg"); leave(); }}
+      onEnd={(result, battle) => {
+        setHp(Math.max(0, Math.round(battle.player.hp))); setEnergy(Math.max(0, Math.round(battle.player.stamina)));
+        if (result === "win") { setMaterials(m => m + 15); notify("Looted 15 Materials!", "#ffd966"); }
+        setExpCombat(ec => ({ ...ec, result }));
+        if (result !== "win") setTimeout(() => handleDeath(`Slain by a ${expCombat.name}`), 1400);
+      }}
+      resultContent={done === "win" ? <div><h2 style={{ color: "#3ec995", margin: "0 0 8px" }}>The {expCombat.name} is slain.</h2><p>+15 materials.</p><Btn variant="success" onClick={leave}>Continue</Btn></div> : <h2 style={{ color: "#e85c3a" }}>The cold takes you.</h2>} />;
   }
 
   if (phase === "giant_combat" && giantCombat) {
@@ -1521,15 +1454,17 @@ const OBJECTIVES = [
           <div className="frost-panel" style={{ padding: 20, textAlign: "center", minHeight: 160, display: "flex", flexDirection: "column", justifyContent: "center" }}>
             {qte ? (
               <div style={{ animation: "pulse 0.5s infinite" }}>
-                 <h2 style={{ color: "#ffd966", fontSize: 24, margin: "0 0 15px", textTransform: "uppercase", letterSpacing: "2px" }}>{qte.p}</h2>
+                 <div style={{ fontSize: 40, marginBottom: 6 }}>{qte.icon}</div>
+                 <h2 style={{ color: "#ffd966", fontSize: 22, margin: "0 0 6px", letterSpacing: "1px" }}>{qte.p}</h2>
+                 <p style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", margin: "0 0 12px" }}>Read it. Dodge away from where it lands · jump sweeps · throw yourself back from grabs.{giantCombat?.slowed ? " (Its leg is crippled — you have more time.)" : ""}{giantCombat?.disabledArm ? " (One arm hangs useless.)" : ""}</p>
                  <div style={{ width: "80%", margin: "0 auto 20px" }}>
                     <Bar val={qte.time} max={100} color={qte.time > 50 ? '#3ec995' : (qte.time > 20 ? '#ff8c00' : '#e85c3a')} h={12} />
                  </div>
                  <div style={{ display: "flex", justifyContent: "center", gap: 15 }}>
-                    <Btn variant={qte.k==='w'?"primary":"ghost"} onClick={() => processQteInput('w')}>[W] Grapple Up</Btn>
-                    <Btn variant={qte.k==='a'?"primary":"ghost"} onClick={() => processQteInput('a')}>[A] Dodge Left</Btn>
-                    <Btn variant={qte.k==='s'?"primary":"ghost"} onClick={() => processQteInput('s')}>[S] Slide Under</Btn>
-                    <Btn variant={qte.k==='d'?"primary":"ghost"} onClick={() => processQteInput('d')}>[D] Dodge Right</Btn>
+                    <Btn variant="ghost" onClick={() => processQteInput('w')}>[W/↑] Jump & grapple</Btn>
+                    <Btn variant="ghost" onClick={() => processQteInput('a')}>[A/←] Dodge left</Btn>
+                    <Btn variant="ghost" onClick={() => processQteInput('s')}>[S/↓] Throw back</Btn>
+                    <Btn variant="ghost" onClick={() => processQteInput('d')}>[D/→] Dodge right</Btn>
                  </div>
               </div>
             ) : (

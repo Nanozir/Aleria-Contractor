@@ -5,6 +5,7 @@ import CombatScreen from "./combat/CombatScreen";
 import LumenariFight from "./combat/LumenariFight";
 import { makeEnemy } from "./combat/engine";
 import Cinematic from "./cinematic/Cinematic";
+import { generateContracts } from "./contracts";
 import DevilScenario, { newDevilState, rankOf } from "./DevilScenario";
 import EquarScenario from "./EquarScenario";
 import TenebrimScenario from "./TenebrimScenario";
@@ -60,6 +61,8 @@ export default function App(){
   const [combat,setCombat]=useState(null); // { enemies, mode: "normal"|"doomsday", wave, key }
   const [combatResult,setCombatResult]=useState(null);
   const [combatSummary,setCombatSummary]=useState(null);
+  const [contracts,setContracts]=useState([]);
+  const [contractDay,setContractDay]=useState(0);
   const [combatOrigin,setCombatOrigin]=useState("overworld");
   const [nearDeathWins,setNearDeathWins]=useState(0);
   const [totalKills,setTotalKills]=useState(0);
@@ -564,6 +567,23 @@ export default function App(){
     if(highStar>thr){const wm=enemies.find(e=>e.star===highStar);setWarnMonster(wm);setWarnVisible(true);SFX.warn();setTimeout(()=>{setWarnVisible(false);setTimeout(()=>launchCombat(enemies),350);},2500);}
     else launchCombat(enemies);
   }
+  function maxStarNow(){const dd=postDoomsday?5:doomsday;return postDoomsday?5:dd<3?2:dd<6?3:dd<8?4:5;}
+  function refreshContracts(){setContracts(generateContracts({cls:cls?.id,hunterStars,maxStar:maxStarNow()}));setContractDay(day);}
+  function startContract(c){
+    setCombatOrigin(screen);
+    const dd=postDoomsday?5:doomsday;
+    const hpScale=(1+dd*0.08+(declinedInvite?0.2:0))*(diff?.hpMult||1);
+    const atkScale=(1+dd*0.06+(declinedInvite?0.15:0))*(diff?.enemyAtk||1);
+    const cnt=Math.max(1,Math.min(c.enemies.length+(diff?.enemies||2)-2,4));
+    const ids=Array.from({length:cnt},(_,i)=>c.enemies[i]||c.enemies[0]);
+    const enemies=ids.map(id=>makeEnemy(MONSTERS.find(m=>m.id===id),{hp:hpScale,atk:atkScale}));
+    setContracts(cs=>cs.filter(x=>x.id!==c.id));
+    const pp=getBonusAtk()+getBonusDef();const thr=pp>=40?4:pp>=25?3:2;
+    const launch=()=>launchCombat(enemies,{pay:c.pay,title:c.title});
+    if(c.star>thr){setWarnMonster(enemies[0]);setWarnVisible(true);SFX.warn();setTimeout(()=>{setWarnVisible(false);setTimeout(launch,350);},2200);}
+    else launch();
+  }
+  useEffect(()=>{if(screen==="overworld"&&cls&&contractDay!==day)refreshContracts();},[screen,day,cls]);
   function startDeepPatrol(){
     setCombatOrigin(screen);
     const pool=[...UW_MONSTERS.filter(m=>m.star>=4),...MONSTERS.filter(m=>m.star===5)];
@@ -580,7 +600,7 @@ export default function App(){
     if(window.SFX&&window.SFX.sleep)window.SFX.sleep();
   }
   function launchCombat(enemies,opts={}){
-    setCombat({enemies,mode:opts.mode||"normal",wave:opts.wave||0,deep:!!opts.deep,key:Date.now()});
+    setCombat({enemies,mode:opts.mode||"normal",wave:opts.wave||0,deep:!!opts.deep,pay:opts.pay||1,title:opts.title,key:Date.now()});
     setCombatResult(null);setCombatSummary(null);
     setScreen("combat");
     if((opts.mode||"normal")==="normal"){setDaysSinceContract(0);if(race?.id==="devil"&&!leftUnderworld)setDevilRep(r=>r+1);}
@@ -602,7 +622,7 @@ export default function App(){
       finalEnemies.forEach(e=>{totalXp+=e.reward?.xp||0;totalBronze+=e.reward?.bronze||0;});
       const rm=cls?.id==="adventurer"?RANK_MULT[advRankIdx]:1.5;
       const gm=diff?.goldMult||1;
-      const bonus=Math.round(totalBronze*(1+(postDoomsday?0:doomsday*0.08))*rm*gm);
+      const bonus=Math.round(totalBronze*(1+(postDoomsday?0:doomsday*0.08))*rm*gm*(combat?.pay||1));
       setXp(x=>x+totalXp);setBronze(b=>b+bonus);setTotalEarned(t=>t+bonus);setTotalKills(k=>k+finalEnemies.length);
       if(!postDoomsday)setDoomsday(d=>Math.min(10,d+0.25));
       addLog(`Victory. +${totalXp} XP, +${bonus} Bronze.`,"reward");
@@ -953,58 +973,33 @@ export default function App(){
     </div>
   );
 
-  if(screen==="difficulty") return (
-    <div style={{minHeight: "100vh", fontFamily: "var(--font-sans)", position: "relative", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", padding: "2rem"}}>
+  if(screen==="difficulty") {
+    const META={easy:{pill:["+50% GOLD","#3ec995"]},normal:{},hard:{pill:["PERMADEATH","#e85c3a"]},insanity:{pill:["PERMADEATH · LOCKED","#e85c3a"]}};
+    const scenario=["tenebrim","beastkin","elf","devil"].includes(race?.id);
+    return (
+    <div style={{minHeight: "100vh", fontFamily: "var(--font-sans)", position: "relative", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", padding: "2rem 1rem"}}>
       <PastoralBG />
       <div style={{position: "relative", zIndex: 10, width: "100%", maxWidth: 650}}>
-        
-        <div style={{textAlign: "center", marginBottom: 40}}>
-          <h2 style={{fontSize: 42, fontWeight: 900, color: "#fff", textShadow: "0 0 20px rgba(255,255,255,0.5)", marginBottom: 10}}>Choose your difficulty</h2>
-          <p style={{fontSize: 12, color: "rgba(255,255,255,0.4)", letterSpacing: "0.2em", textTransform: "uppercase", fontWeight: 600}}>Permanent for this playthrough</p>
+        <div style={{textAlign: "center", marginBottom: 30}}>
+          <Tag color="#a89df0">{race?.name}</Tag>
+          <h2 style={{fontSize: "clamp(30px,5vw,42px)", fontWeight: 900, color: "#fff", textShadow: "0 0 20px rgba(255,255,255,0.5)", margin: "12px 0 10px"}}>Choose your difficulty</h2>
+          <p style={{fontSize: 12, color: "rgba(255,255,255,0.45)", letterSpacing: "0.2em", textTransform: "uppercase", fontWeight: 600}}>Permanent for this playthrough{scenario?" · scenario meta-progression only on Easy & Normal":""}</p>
         </div>
-        
-        <div style={{display: "flex", flexDirection: "column", gap: 16}}>
-          <div data-testid="diff-easy" onClick={() => pickDiff(DIFFS[0])} style={{ position: "relative", background: "linear-gradient(180deg, rgba(40,20,60,0.8) 0%, rgba(20,10,35,0.9) 100%)", border: "1px solid rgba(123, 111, 228, 0.3)", borderRadius: 12, padding: "24px", cursor: "pointer", boxShadow: "0 4px 20px rgba(0,0,0,0.5)", transition: "all 0.2s" }} onMouseOver={(e) => { e.currentTarget.style.transform = "scale(1.02)"; e.currentTarget.style.border = "1px solid rgba(123, 111, 228, 0.8)"; e.currentTarget.style.boxShadow = "0 0 25px rgba(123,111,228,0.2)"; }} onMouseOut={(e) => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.border = "1px solid rgba(123, 111, 228, 0.3)"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.5)"; }}>
-            <div style={{display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12}}>
-              <h3 style={{fontSize: 22, fontWeight: 800, color: "#fff", margin: 0}}>Easy</h3>
-              <span style={{background: "rgba(62,201,149,0.15)", border: "1px solid rgba(62,201,149,0.5)", color: "#3ec995", fontSize: 11, padding: "4px 10px", borderRadius: 20, fontWeight: 700}}>+50% GOLD</span>
+        <div style={{display: "flex", flexDirection: "column", gap: 14}}>
+          {DIFFS.map(d=>{const locked=d.locked&&progress.cleared<(d.unlockReq||1);const m=META[d.id]||{};return <div key={d.id} data-testid={`diff-${d.id}`} className={`choice-card ${locked?"locked":""}`} onClick={()=>{if(locked){notify("Defeat the Lumenari to unlock Insanity.","#9a6c10");return;}pickDiff(d);}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+              <h3 style={{fontSize:22,fontWeight:800,color:"#fff",margin:0}}>{d.name}</h3>
+              {m.pill&&<span className="pill" style={{color:m.pill[1],borderColor:`${m.pill[1]}88`,background:`${m.pill[1]}18`}}>{m.pill[0]}</span>}
             </div>
-            <p style={{fontSize: 14, color: "rgba(255,255,255,0.6)", margin: 0}}>Reduced enemy damage, faster gold. Single enemies.</p>
-          </div>
-
-          <div data-testid="diff-normal" onClick={() => pickDiff(DIFFS[1])} style={{ position: "relative", background: "linear-gradient(180deg, rgba(40,20,60,0.8) 0%, rgba(20,10,35,0.9) 100%)", border: "1px solid rgba(123, 111, 228, 0.3)", borderRadius: 12, padding: "24px", cursor: "pointer", boxShadow: "0 4px 20px rgba(0,0,0,0.5)", transition: "all 0.2s" }} onMouseOver={(e) => { e.currentTarget.style.transform = "scale(1.02)"; e.currentTarget.style.border = "1px solid rgba(123, 111, 228, 0.8)"; e.currentTarget.style.boxShadow = "0 0 25px rgba(123,111,228,0.2)"; }} onMouseOut={(e) => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.border = "1px solid rgba(123, 111, 228, 0.3)"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.5)"; }}>
-            <div style={{display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12}}>
-              <h3 style={{fontSize: 22, fontWeight: 800, color: "#fff", margin: 0}}>Normal</h3>
-            </div>
-            <p style={{fontSize: 14, color: "rgba(255,255,255,0.6)", margin: 0}}>Standard balance. Two enemies per fight.</p>
-          </div>
-
-          <div data-testid="diff-hard" onClick={() => pickDiff(DIFFS[2])} style={{ position: "relative", background: "linear-gradient(180deg, rgba(40,20,60,0.8) 0%, rgba(20,10,35,0.9) 100%)", border: "1px solid rgba(123, 111, 228, 0.3)", borderRadius: 12, padding: "24px", cursor: "pointer", boxShadow: "0 4px 20px rgba(0,0,0,0.5)", transition: "all 0.2s" }} onMouseOver={(e) => { e.currentTarget.style.transform = "scale(1.02)"; e.currentTarget.style.border = "1px solid rgba(123, 111, 228, 0.8)"; e.currentTarget.style.boxShadow = "0 0 25px rgba(123,111,228,0.2)"; }} onMouseOut={(e) => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.border = "1px solid rgba(123, 111, 228, 0.3)"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.5)"; }}>
-            <div style={{display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12}}>
-              <h3 style={{fontSize: 22, fontWeight: 800, color: "#fff", margin: 0}}>Hard</h3>
-              <span style={{background: "rgba(184, 58, 42, 0.15)", border: "1px solid rgba(184, 58, 42, 0.5)", color: "#e85c3a", fontSize: 11, padding: "4px 10px", borderRadius: 20, fontWeight: 700, letterSpacing: "0.05em"}}>PERMADEATH</span>
-            </div>
-            <p style={{fontSize: 14, color: "rgba(255,255,255,0.6)", margin: 0}}>Less gold, tougher enemies, two per fight. Permadeath.</p>
-          </div>
-
-          <div data-testid="diff-insanity" onClick={() => { if(progress.cleared > 0) pickDiff(DIFFS[3]); else notify(`Defeat the Lumenari to unlock Insanity.`, "#9a6c10"); }} style={{ position: "relative", background: "linear-gradient(180deg, rgba(40,20,60,0.8) 0%, rgba(20,10,35,0.9) 100%)", border: "1px solid rgba(123, 111, 228, 0.3)", borderRadius: 12, padding: "24px", cursor: progress.cleared > 0 ? "pointer" : "not-allowed", opacity: progress.cleared > 0 ? 1 : 0.5, boxShadow: "0 4px 20px rgba(0,0,0,0.5)", transition: "all 0.2s" }} onMouseOver={(e) => { if(progress.cleared > 0) { e.currentTarget.style.transform = "scale(1.02)"; e.currentTarget.style.border = "1px solid rgba(123, 111, 228, 0.8)"; e.currentTarget.style.boxShadow = "0 0 25px rgba(123,111,228,0.2)"; } }} onMouseOut={(e) => { if(progress.cleared > 0) { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.border = "1px solid rgba(123, 111, 228, 0.3)"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.5)"; } }}>
-            <div style={{display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12}}>
-              <h3 style={{fontSize: 22, fontWeight: 800, color: "#fff", margin: 0}}>Insanity</h3>
-              <span style={{background: "rgba(184, 58, 42, 0.15)", border: "1px solid rgba(184, 58, 42, 0.5)", color: "#e85c3a", fontSize: 11, padding: "4px 10px", borderRadius: 20, fontWeight: 700, letterSpacing: "0.05em"}}>PERMADEATH · LOCKED</span>
-            </div>
-            <p style={{fontSize: 14, color: "rgba(255,255,255,0.6)", margin: 0}}>Three enemies, much harder. Permadeath. Defeat the Lumenari to unlock.</p>
-          </div>
+            <p style={{fontSize:14,color:"rgba(255,255,255,0.6)",margin:0}}>{d.desc}</p>
+          </div>;})}
         </div>
-        
-        <div style={{textAlign: "center", marginTop: 30}}>
-          <button onClick={() => { if(window.SFX && window.SFX.menuBack) window.SFX.menuBack(); setScreen("race"); }} style={{background: "transparent", border: "none", color: "rgba(255,255,255,0.5)", fontSize: 14, cursor: "pointer", padding: "10px", transition: "color 0.2s"}} onMouseOver={(e) => e.target.style.color = "#fff"} onMouseOut={(e) => e.target.style.color = "rgba(255,255,255,0.5)"}>
-            ← Back to Race Selection
-          </button>
+        <div style={{textAlign: "center", marginTop: 26}}>
+          <button className="link-btn" onClick={() => { if(window.SFX && window.SFX.menuBack) window.SFX.menuBack(); setScreen("race"); }}>← Back to Race Selection</button>
         </div>
-
       </div>
     </div>
-  );
+  );}
 
   if(screen==="race") {
     const CARDS=[
@@ -1387,10 +1382,25 @@ if (screen === "devil_scenario") {
             <Btn variant="gold" onClick={acceptNobleQuest}>Accept Quest</Btn>
           </Panel>}
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(155px,1fr))",gap:10,marginBottom:14}}>
-            <Panel onClick={()=>startCombat(false)}><p style={{fontWeight:600,fontSize:13,color:"#e85c3a",marginBottom:4}}>Contract board</p><p style={{fontSize:11,color:"rgba(200,192,248,0.5)",marginBottom:8}}>{postDoomsday?"Post-doomsday work.":doomsday>=7?"⚠ Surge.":doomsday>=4?"Active.":"Routine."}</p><Btn small variant="danger" onClick={()=>startCombat(false)}>Take ↗</Btn></Panel>
+            <Panel><p style={{fontWeight:600,fontSize:13,color:"#e85c3a",marginBottom:4}}>Wilds</p><p style={{fontSize:11,color:"rgba(200,192,248,0.5)",marginBottom:8}}>{postDoomsday?"Post-doomsday roaming.":doomsday>=7?"⚠ Surge. Monsters everywhere.":doomsday>=4?"Restless.":"Quiet roads."} Roam for a random fight.</p><Btn small variant="danger" onClick={()=>startCombat(false)}>Roam ↗</Btn></Panel>
             <Panel><p style={{fontWeight:600,fontSize:13,color:"#3ec995",marginBottom:4}}>Sleep — {housingOpt.name}</p><p style={{fontSize:11,color:"rgba(200,192,248,0.5)",marginBottom:8}}>{housingOpt.cost>0?`${housingOpt.cost} B/night`:"Free"}</p><div style={{display:"flex",gap:6}}><Btn small variant="success" onClick={doSleep}>Sleep</Btn><Btn small variant="ghost" onClick={()=>{setScreen("sleep");setTab("sleep");}}>Change</Btn></div></Panel>
             {/* NY LOGIK: Knappen länkar nu till vår nya komponent i Views.jsx! */}
             {!race?.canSpell&&<Panel onClick={() => setScreen("training")}><p style={{fontWeight:600,fontSize:13,color:"#e0a523",marginBottom:4}}>Combat training</p><p style={{fontSize:11,color:"rgba(200,192,248,0.5)",marginBottom:8}}>+Physical level</p><Btn small variant="amber" onClick={() => setScreen("training")}>Train ↗</Btn></Panel>}
+          </div>
+          <div style={{marginBottom:14}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:8}}>
+              <p className="section-label" style={{margin:0,color:cls?.id==="hunter"?"#a89df0":"#e0a523"}}>{cls?.id==="hunter"?`Hunter Association — bounties (cleared for ★${hunterStars})`:`${cls?.org||"Guild"} contract board`}</p>
+              <span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>New postings each morning</span>
+            </div>
+            {contracts.length===0?<p style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>The board is empty for today. Sleep, and new work will be posted.</p>:
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:10}}>
+              {contracts.map(c=><div key={c.id} className="choice-card" style={{padding:14,"--accent":c.risky?"rgba(232,92,58,0.5)":"rgba(224,165,35,0.35)","--accent-strong":c.risky?"#e85c3a":"#e0a523"}} onClick={()=>startContract(c)}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:6,marginBottom:6}}><b style={{fontSize:13.5,color:"#fff"}}>{c.title}</b><StarRating stars={c.star}/></div>
+                <p style={{fontSize:11.5,margin:"0 0 6px"}}>{c.desc}</p>
+                <p style={{fontSize:11,margin:"0 0 8px",fontStyle:"italic",color:"rgba(255,220,200,0.6)"}}>{c.lead}: {c.leadDesc}</p>
+                <div style={{display:"flex",gap:5,flexWrap:"wrap"}}><span className="pill" style={{color:"#e0a523",borderColor:"#e0a52366"}}>Pay ×{c.pay.toFixed(2)}</span>{c.enemies.length>1&&<span className="pill" style={{color:"#e85c3a",borderColor:"#e85c3a66"}}>{c.enemies.length} targets</span>}{c.risky&&<span className="pill" style={{color:"#ff6b4a",borderColor:"#ff6b4a88"}}>Above your clearance</span>}</div>
+              </div>)}
+            </div>}
           </div>
           {potions.length>0&&<Panel style={{marginBottom:10}}><p style={{fontSize:11,color:"rgba(200,192,248,0.4)",marginBottom:8}}>Potions</p><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{getStacks().map(p=><Btn key={p.id} small variant="success" onClick={()=>usePotion(p)}>{p.name} x{p.count}</Btn>)}</div></Panel>}
           {log.length>0&&<div ref={logRef} style={{maxHeight:120,overflowY:"auto",padding:"10px 14px",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,fontSize:12,lineHeight:1.8,background:"rgba(0,0,0,0.25)"}}>{log.map(l=><div key={l.id} style={{color:LOG_C[l.type]||"#ccc"}}>{l.msg}</div>)}</div>}
@@ -1433,7 +1443,7 @@ if (screen === "devil_scenario") {
     </div>;
     return <CombatScreen key={combat.key} initialEnemies={combat.enemies} player={battlePlayer()} ctx={combatCtx()} actions={combatActions()}
       potions={getStacks()} onConsumePotion={consumePotion} allies={(isDoom?allies:0)+companionAllies()}
-      title={isDoom?`DOOMSDAY · WAVE ${combat.wave+1}/5`:"CONTRACT"} subtitle={isDoom?"The horde climbs from below.":undefined}
+      title={isDoom?`DOOMSDAY · WAVE ${combat.wave+1}/5`:(combat.title||"CONTRACT").toUpperCase()} subtitle={isDoom?"The horde climbs from below.":undefined}
       background={isDoom?"radial-gradient(ellipse at top,#3a0c0c 0%,#120404 70%)":undefined}
       canFlee={!isDoom} onFlee={flee} onEnd={handleCombatEnd} resultContent={resultContent}
       warning={warnVisible&&warnMonster&&<div style={{position:"fixed",top:0,left:0,right:0,zIndex:300,background:"linear-gradient(90deg,#a82828,#c84838)",padding:"14px 20px",display:"flex",alignItems:"center",gap:12,animation:"warnSlide 0.35s ease",boxShadow:"0 4px 24px rgba(184,58,42,0.5)"}}><span style={{fontSize:22}}>⚠</span><div><p style={{fontWeight:800,fontSize:14,color:"#fff",margin:0}}>{warnMonster.star}-STAR THREAT</p><p style={{fontSize:12,color:"rgba(255,255,255,0.75)",margin:0}}>{warnMonster.name}</p></div></div>}/>;
