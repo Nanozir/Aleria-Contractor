@@ -118,7 +118,7 @@ export default function BeastkinScenario({ setScreen, notify, setStats, diff, ex
   const out = g.outsider && OUTSIDERS.find(o => o.id === g.outsider.id);
   const dayInSeason = ((g.day - 1) % DAYS_PER_SEASON) + 1;
   const toHarvest = HARVEST_DAY - g.day;
-  const canRescue = season === "Winter" && g.taken > 0 && !g.flags.rescued && (g.subtype === "lupin" || g.notables.rook === "home");
+  const canRescue = season === "Winter" && g.taken > 0 && !g.flags.rescued && (g.subtype === "canine" || g.notables.rook === "home");
 
   return <div style={{ minHeight: "100vh", background: SEASON_BG[season], color: "#fff", fontFamily: "var(--font-sans)" }}>
     <div style={{ maxWidth: 1280, margin: "0 auto", padding: 18 }}>
@@ -174,7 +174,7 @@ export default function BeastkinScenario({ setScreen, notify, setStats, diff, ex
                 <button className="ten-choice" onClick={() => up(fields)}><b>Work the fields</b><span>{season === "Winter" ? "Little grows now" : `Food${g.subtype === "ursan" ? " (+50%, Ursan)" : ""}, trust`}</span></button>
                 <button className="ten-choice" onClick={() => up(forage)}><b>Forage the forest</b><span>Materials, herbs</span></button>
                 <button className="ten-choice" onClick={() => up(hunt)}><b>Hunt</b><span>-15 stamina · food and hides to trade</span></button>
-                <button className="ten-choice" onClick={() => up(patrol)}><b>{g.slot === 1 ? "Night watch" : "Patrol the borders"}</b><span>Look for Orlen's men{g.subtype === "melano" && g.slot === 1 ? " — your hour, Melano" : ""}</span></button>
+                <button className="ten-choice" onClick={() => up(patrol)}><b>{g.slot === 1 ? "Night watch" : "Patrol the borders"}</b><span>Look for Orlen's men{g.subtype === "canine" ? " — your nose finds more" : ""}</span></button>
                 <button className="ten-choice" onClick={() => up(train)}><b>Train your instincts</b><span>+1 ATK, +4 max MP</span></button>
                 <button className="ten-choice" onClick={() => up(rest)}><b>Rest</b><span>Recover HP, stamina, mana</span></button>
                 <button className="ten-choice" disabled={g.goods < 3} onClick={() => up(pilgrimage)}><b>Walk to Church Holling</b><span>Two days · 3 goods offering · Church favor{g.clues >= 3 && !g.exposed ? " · EXPOSE ORLEN" : ""}</span></button>
@@ -199,7 +199,7 @@ export default function BeastkinScenario({ setScreen, notify, setStats, diff, ex
                   <p style={{ fontSize: 11, margin: "4px 0 0" }}>{n.kind}. {n.desc}</p>
                 </div>; })}
               </div>
-              <p style={{ fontSize: 11.5, marginTop: 10 }}>Kesh fights beside you in the big fights. Rook can track anyone who goes missing.</p>
+              <p style={{ fontSize: 11.5, marginTop: 10 }}>Kesh fights beside you in the big fights. Rook can smell out the trail of anyone who goes missing.</p>
             </Panel>}
           </>}
         </main>

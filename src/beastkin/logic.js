@@ -20,7 +20,7 @@ export function newGame() {
 }
 
 export const seasonOf = (g) => SEASONS[Math.min(3, Math.floor((g.day - 1) / DAYS_PER_SEASON))];
-export const sub = (g) => SUBTYPES[g.subtype] || SUBTYPES.lupin;
+export const sub = (g) => SUBTYPES[g.subtype] || SUBTYPES.canine;
 export function log(g, msg, type = "info") { g.log = [...g.log.slice(-80), { id: Math.random(), msg, type }]; }
 export function toast(g, msg, color = "#e0a523") { g.toasts = [...(g.toasts || []), { msg, color }]; }
 const home = (g, id) => g.notables[id] === "home";
@@ -29,6 +29,7 @@ export function chooseSubtype(g, id) {
   const S = SUBTYPES[id];
   g.subtype = id; g.act = "village";
   g.hp = g.maxHp = S.stats.hp; g.mp = g.maxMp = S.stats.mp; g.atk = S.stats.atk;
+  if (id === "melano") g.trust = 45; // the Gemea still flinch when you pass
   g.cinematic = "intro";
   log(g, `Hollowmere. Spring. You are ${S.name}.`, "sys");
 }
@@ -38,12 +39,12 @@ export function combatCtx(g) {
   const S = sub(g); const season = seasonOf(g);
   let atk = g.atk + (g.flags.trained || 0);
   if (g.subtype === "lizardman") atk *= season === "Summer" ? 1.15 : season === "Winter" ? 0.8 : 1;
-  return { atk: Math.round(atk), def: S.stats.def, dodge: S.stats.dodge, crit: 0.08 + (g.subtype === "melano" ? 0.12 : 0), strikeBonus: 0 };
+  return { atk: Math.round(atk), def: S.stats.def, dodge: S.stats.dodge, crit: 0.08, strikeBonus: 0 };
 }
 export function battlePlayer(g) { return { hp: g.hp, maxHp: g.maxHp, mp: g.mp, maxMp: g.maxMp, stamina: g.stamina, maxStamina: g.maxStamina }; }
-export function actionsFor(g) { return [...sub(g).actions, WILD_SURGE]; }
+export function actionsFor(g) { return [...sub(g).actions, g.subtype === "canine" ? { ...WILD_SURGE, backfire: 0.25, desc: "Raw core power, pure instinct. Huge range. 25% it backfires." } : WILD_SURGE]; }
 export function alliesFor(g, extra = 0) {
-  return (g.subtype === "lupin" ? 1 : 0) + extra;
+  return (g.subtype === "canine" ? 1 : 0) + extra;
 }
 export function startFight(g, kind, enemies, opts = {}) {
   g.combat = { key: Date.now() + Math.random(), kind, enemies, allies: opts.allies ?? alliesFor(g), ambush: !!opts.ambush, title: opts.title, startHp: g.hp, result: null, summary: null, scale: opts.scale || 1 };
@@ -90,6 +91,7 @@ function endDay(g) {
   // Scripted beats
   if (g.day === 4 && !g.flags.orlen) { g.flags.orlen = true; g.event = { id: "orlen" }; return; }
   if (g.day === 7 && !g.flags.kekali) { g.flags.kekali = true; g.event = { id: "kekali" }; return; }
+  if (g.day === 8 && !g.flags.heat) { g.flags.heat = true; g.event = { id: "heat" }; return; }
   if (g.day === 9 && !g.flags.pip) { g.flags.pip = true; g.event = { id: "pip" }; return; }
   if (g.day === 12 && !g.flags.missing) { g.flags.missing = true; g.event = { id: "missing" }; return; }
   if (seasonOf(g) === "Winter" && !g.flags.fever) { g.flags.fever = true; g.event = { id: "fever" }; return; }
@@ -121,7 +123,7 @@ export function fields(g) {
   spend(g);
 }
 export function forage(g) {
-  const m = irnd(4, 7), h = irnd(1, 2);
+  const m = irnd(4, 7), h = irnd(1, 2) + (g.subtype === "gemea" ? 2 : 0);
   g.materials += m; g.herbs += h;
   log(g, `Wood, reed and resin from the forest: +${m} materials, +${h} herbs.`, "reward");
   if (Math.random() < 0.2) { log(g, "Something in the undergrowth has been watching you.", "dmg"); startFight(g, "hunt", [pick(["cur", "crawler", "blobooze"])]); }
@@ -131,13 +133,13 @@ export function hunt(g) {
   if (g.stamina < 15) { toast(g, "Too tired to hunt.", "#e85c3a"); return; }
   g.stamina -= 15;
   const prey = pick(seasonOf(g) === "Summer" ? ["kekali", "gasgees", "shafo"] : ["cur", "shafo", "gasgees", "blobooze"]);
-  const ambush = Math.random() < 0.35 + (g.subtype === "melano" ? 0.2 : 0) + (g.subtype === "lupin" ? 0.15 : 0);
+  const ambush = Math.random() < 0.35 + (g.subtype === "canine" ? 0.2 : 0);
   startFight(g, "hunt", [prey], { ambush, title: "THE HUNT" });
   spend(g);
 }
 export function patrol(g) {
   const night = g.slot === 1;
-  const mel = g.subtype === "melano" && night;
+  const mel = g.subtype === "canine"; // the nose finds what eyes miss
   log(g, night ? "You walk the borders under the moon." : "You walk the borders.", "info");
   const r = Math.random();
   if (r < (mel ? 0.4 : 0.25)) {
@@ -176,7 +178,7 @@ export function pilgrimage(g) {
   log(g, `You walk to Church Holling, the roadside church outside the capital. The priests are delighted to see one of the Hero's children. (+${gain} favor)`, "reward");
   if (g.clues >= 3 && !g.exposed) {
     g.exposed = true;
-    log(g, "You tell them about Orlen — the tracks, the chains, the 'recruits' who never write. The priest stops smiling. \"The Knights will hear of this.\"", "lumen");
+    log(g, g.subtype === "melano" ? "You have no words — so you draw Orlen's seal in the dirt, lay down the chain-link you found, and point at the road. The priest understands. \"The Knights will hear of this.\"" : "You tell them about Orlen — the tracks, the chains, the 'recruits' who never write. The priest stops smiling. \"The Knights will hear of this.\"", "lumen");
     toast(g, "Orlen exposed to the Church", "#ffd966");
   }
   spend(g, 4);
@@ -200,6 +202,11 @@ export function resolveOutsider(g, how, auto = false) {
   } else if (how === "refuse") {
     if (t === "honest") { g.trust = clamp(g.trust - 6); if (o.id === "missionary") g.favor = Math.max(0, g.favor - 1); log(g, "You send them away. The village thinks you were unkind — and they were right.", "dmg"); }
     else { g.trust = clamp(g.trust + 2); log(g, "You send them away. The village grumbles — until later.", "info"); }
+  } else if (how === "confront" && g.subtype === "melano") {
+    // Melano cannot speak. A bellow says enough.
+    if (t === "slaver" || t === "spy") { g.clues += 1; g.trust = clamp(g.trust + 4); log(g, "You bellow and lower your horns. He runs for the road and doesn't look back — dropping a sigil-chain as he goes. (+1 clue)", "reward"); }
+    else if (t === "cheat") { g.goods += 1; log(g, "One bellow and the trader suddenly finds his scales were wrong all along.", "reward"); }
+    else { g.trust = clamp(g.trust - 6); log(g, "You bellow at an honest stranger. They flee. The Gemea won't look at you for the rest of the day.", "dmg"); }
   } else if (how === "confront") {
     if (t === "slaver" || t === "spy") {
       g.clues += 1;
@@ -219,6 +226,7 @@ export function applyCombatResult(g, result, battle, diff) {
   if (result === "win") {
     if (c.kind === "hunt") { const f = irnd(6, 11); g.food += f; g.goods += 1; lines.push(`+${f} food`, "+1 goods (hides)"); }
     if (c.kind === "patrol") { g.clues += 1; g.materials += 2; lines.push("+1 clue: they carried Orlen's seal"); }
+    if (c.kind === "heat") { g.trust = clamp(g.trust + (g.subtype === "melano" ? 20 : 12)); lines.push("The band turns back toward the highlands.", g.subtype === "melano" ? "The Gemea stop flinching when you pass." : "The Gemea are safe this summer."); }
     if (c.kind === "kekali") { g.trust = clamp(g.trust + 10); g.food += 8; lines.push("The pack moves on. Trust +10"); }
     if (c.kind === "rescue") { g.flags.rescued = true; const n = Math.min(g.taken, irnd(3, 5)); g.taken -= n; g.pop += n; const back = Object.keys(g.notables).filter(k => g.notables[k] === "taken"); back.forEach(k => { g.notables[k] = "home"; }); lines.push(`${n} villagers brought home`, ...back.map(k => `${NOTABLES.find(n => n.id === k).name} is home`)); g.trust = clamp(g.trust + 15); }
     if (c.kind === "harvest1") { lines.push("The first wave breaks against you."); }
@@ -228,6 +236,7 @@ export function applyCombatResult(g, result, battle, diff) {
     else {
       g.hp = Math.max(1, Math.round(g.maxHp * 0.15));
       lines.push("You are carried home.");
+      if (c.kind === "heat") { takeGemea(g, lines); }
       if (c.kind === "harvest1" || c.kind === "harvest2") {
         const n = irnd(6, 9); g.pop -= n; g.taken += n; g.trust = clamp(g.trust - 25);
         const nt = Object.keys(g.notables).filter(k => home(g, k));
@@ -253,6 +262,13 @@ function harvestScale(g) {
   return Math.max(0.7, 1 + g.spied * 0.12 - (g.built.palisade ? 0.2 : 0));
 }
 
+function takeGemea(g, lines) {
+  const n = 2; g.pop -= n; g.taken += n; g.trust = clamp(g.trust - 12);
+  const msg = "Two Gemea were carried off into the highlands. Some years, they come back.";
+  if (lines) lines.push(msg); else log(g, msg, "dmg");
+  if (home(g, "pip") && Math.random() < 0.5) { g.notables.pip = "taken"; if (lines) lines.push("Pip is gone."); else log(g, "Pip is gone.", "dmg"); }
+}
+
 // ── Events ─────────────────────────────────────────────────────────────────
 export const EVENTS = {
   outsider: (g) => {
@@ -270,7 +286,7 @@ export const EVENTS = {
         } }] : []),
         { label: "Welcome them", hint: "Trade, hospitality", run: (g) => { resolveOutsider(g, "welcome"); spend(g); } },
         { label: "Turn them away politely", hint: "Safe — but rude if they're honest", run: (g) => { resolveOutsider(g, "refuse"); spend(g); } },
-        { label: "Confront them publicly", hint: "If you're wrong, the village will be ashamed of you", run: (g) => { resolveOutsider(g, "confront"); spend(g); } },
+        { label: g.subtype === "melano" ? "Bellow at them" : "Confront them publicly", hint: g.subtype === "melano" ? "You can't argue — but you can frighten. No fight, but honest folk will be scared too." : "If you're wrong, the village will be ashamed of you", run: (g) => { resolveOutsider(g, "confront"); spend(g); } },
       ],
     };
   },
@@ -279,7 +295,7 @@ export const EVENTS = {
     text: "Spring planting ends with dancing, honey cakes and every child in the village trying to ride Elder Moss. Nobody remembers who started the tradition. Probably the Hero.",
     choices: [
       { label: "Dance", hint: "Trust +8", run: (g) => { g.trust = clamp(g.trust + 8); } },
-      { label: "Tell the old story of the 7th Hero", hint: "Favor +1, the village remembers what it is", run: (g) => { g.favor += 1; log(g, "He made us from his own core, Moss says. That's why we're hard to kill and easy to fool."); } },
+      { label: "Listen to Moss tell the story of the 7th Hero", hint: "Favor +1, the village remembers what it is", run: (g) => { g.favor += 1; log(g, "He made us from his own core, Moss says. That's why we're hard to kill and easy to fool."); } },
     ],
   }),
   orlen: () => ({
@@ -288,7 +304,7 @@ export const EVENTS = {
     choices: [
       { label: "Accept his patronage", hint: "+4 goods, trust +5. He'll send recruiters more often.", run: (g) => { g.goods += 4; g.trust = clamp(g.trust + 5); g.flags.patron = true; log(g, "The village loves him. You try to."); } },
       { label: "Decline politely", hint: "Trust -5. He keeps smiling.", run: (g) => { g.trust = clamp(g.trust - 5); log(g, "\"Of course, of course. Another time.\" His smile doesn't move at all."); } },
-      { label: "Read him", hint: "Use your senses", run: (g) => { if (Math.random() < 0.5 + (g.subtype === "angelos" || g.subtype === "melano" ? 0.2 : 0)) { g.clues += 1; log(g, "Cologne over iron. The same iron as pact-chains. He is counting you. (+1 clue)", "lumen"); } else log(g, "He smells of cologne and nothing else. Too much cologne?"); g.event = { id: "orlen2" }; } },
+      { label: "Read him", hint: "Use your senses", run: (g) => { if (Math.random() < 0.5 + (g.subtype === "angelos" || g.subtype === "canine" ? 0.2 : 0)) { g.clues += 1; log(g, "Cologne over iron. The same iron as pact-chains. He is counting you. (+1 clue)", "lumen"); } else log(g, "He smells of cologne and nothing else. Too much cologne?"); g.event = { id: "orlen2" }; } },
     ],
   }),
   orlen2: () => ({ title: "Factor Orlen", tone: "#ffd966", text: "He's still waiting for an answer, gifts in hand.", choices: [
@@ -303,6 +319,35 @@ export const EVENTS = {
       { label: "Move the herds inland", hint: "Food -6, no fight", run: (g) => { g.food = Math.max(0, g.food - 6); log(g, "The pack loses interest. So do the goats, in the new pasture."); } },
     ],
   }),
+  heat: (g) => {
+    const allies = alliesFor(g, (home(g, "kesh") ? 1 : 0) + (home(g, "rook") ? 1 : 0));
+    const fight = (title) => (g) => startFight(g, "heat", ["melano", "melano"], { allies, title });
+    if (g.subtype === "melano") return {
+      title: "The heat season", tone: "#9a5a4a",
+      text: "You feel it before you hear it: a pressure behind your eyes, a need to break something. Then the bellowing from the high pastures — a Melano band, come down from the highlands for the season. The Gemea know what that means. So do you. You can't tell your kind to leave. None of you have words.",
+      choices: [
+        { label: "Go up into the peaks alone until it passes", hint: "Lose two days. Trust +6 — they're grateful you stayed away. The band still prowls.", run: (g) => { g.trust = clamp(g.trust + 6); spend(g, 4); if (Math.random() < 0.5) takeGemea(g); } },
+        { label: "Stand between them and the Gemea", hint: `Fight two Melano bulls (${allies} allies). Win: trust +20.`, run: fight("YOUR OWN KIND") },
+      ],
+    };
+    if (g.subtype === "gemea") return {
+      title: "The heat season", tone: "#e8dcc8",
+      text: "Bellowing echoes down from the high pastures. The Melano heat season. Every summer, bands come down from the highlands for Gemea — and not everyone they take survives it. Your knees won't stop shaking. They'll come for you, too.",
+      choices: [
+        { label: "Hide in the high caves with the other Gemea", hint: "Food -6, lose a day. Everyone stays safe.", disabled: g.food < 6, run: (g) => { g.food -= 6; spend(g, 2); g.trust = clamp(g.trust + 4); log(g, "Two nights in the cold caves, holding each other's hands. The bellowing passes.", "heal"); } },
+        { label: "Stand your ground", hint: `Fight two Melano bulls (${allies} allies). You are not built for this.`, run: fight("THE HEAT SEASON") },
+      ],
+    };
+    return {
+      title: "The heat season", tone: "#9a5a4a",
+      text: "Bellowing from the high pastures. It's the Melano heat season: bands come down from the highlands, aggressive and wordless, and every year Gemea go missing from the mountain hamlets. Some are never found. Hollowmere's own Gemea — Pip's family among them — are terrified.",
+      choices: [
+        { label: "Hide the Gemea in the high caves", hint: "Food -6. They're safe. Trust +5", disabled: g.food < 6, run: (g) => { g.food -= 6; g.trust = clamp(g.trust + 5); log(g, "The Gemea spend two cold nights in the caves. The band passes by.", "heal"); } },
+        { label: "Stand guard at the pastures", hint: `Fight two Melano bulls (${allies} allies). Win: trust +12`, run: fight("THE HEAT SEASON") },
+        { label: "Hope they pass by", hint: "Risky", run: (g) => { if (Math.random() < 0.3) log(g, "They pass by. This year.", "info"); else takeGemea(g); } },
+      ],
+    };
+  },
   pip: (g) => ({
     title: "Pip saw something", tone: "#9a8cff",
     text: `${home(g, "pip") ? "Pip tugs your sleeve, wide-eyed. \"There were men in the old mill. They had chains that glowed. They were talking about 'the harvest'.\"" : "Pip is gone — taken. But Pip's best friend comes instead, shaking: men in the old mill, glowing chains, talk of 'the harvest'."}`,
@@ -313,9 +358,9 @@ export const EVENTS = {
   }),
   missing: (g) => ({
     title: "The missing", tone: "#c8b48a",
-    text: `${g.taken > 0 ? `${g.taken} villagers have gone 'to work in the city'. Not one has written.` : "A family from the next valley arrives: their young people went with a recruiter and never wrote."} ${g.subtype === "lupin" || home(g, "rook") ? "You know how to follow a trail." : "Nobody here knows how to track that far."}`,
+    text: `${g.taken > 0 ? `${g.taken} villagers have gone 'to work in the city'. Not one has written.` : "A family from the next valley arrives: their young people went with a recruiter and never wrote."} ${g.subtype === "canine" || home(g, "rook") ? "You know how to follow a trail." : "Nobody here knows how to track that far."}`,
     choices: [
-      { label: "Follow the trail", hint: g.subtype === "lupin" || home(g, "rook") ? "+2 clues; if anyone was taken, a chance to bring them home" : "Needs a Lupin or Rook", disabled: !(g.subtype === "lupin" || home(g, "rook")), run: (g) => { g.clues += 2; if (g.taken > 0) startFight(g, "rescue", ["netter", "thug"], { title: "THE HOLDING PEN" }); else log(g, "The trail ends at a sealed wagon-yard stamped with Orlen's seal. (+2 clues)", "lumen"); } },
+      { label: "Follow the trail", hint: g.subtype === "canine" || home(g, "rook") ? "+2 clues; if anyone was taken, a chance to bring them home" : "Needs Canine Kin or Rook", disabled: !(g.subtype === "canine" || home(g, "rook")), run: (g) => { g.clues += 2; if (g.taken > 0) startFight(g, "rescue", ["netter", "thug"], { title: "THE HOLDING PEN" }); else log(g, "The trail ends at a sealed wagon-yard stamped with Orlen's seal. (+2 clues)", "lumen"); } },
       { label: "Let it go", hint: "", run: () => {} },
     ],
   }),

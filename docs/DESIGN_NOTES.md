@@ -93,9 +93,9 @@ Lore anchors: mana sinks and pools below; Devils siphon it to delay the Doomsday
 
 Lore anchors: engineered by the 7th Hero, keen senses, potent cores with poor control, naive sharing communities, Church protection that doesn't reach everywhere.
 
-- **Sub-types:**
-  - **Lizardman** and **Angelos** come from the Races tab. The Angelos' adult-content lore was deliberately left out.
-  - **Melano, Lupin and Ursan are new inventions.** Melano was mentioned but not described in the doc. Please correct them if your canon differs.
+- **Sub-types:** Lizardman, Angelos, Canine Kin, Melano and Gemea follow the author's canon. **Ursan** is a game invention.
+  - Melano cannot speak: they bellow instead of confronting. The village trusts them less at first.
+  - Summer brings the **Melano heat season**: bands come down from the highlands for Gemea. You can hide them, fight, or gamble. The event plays differently if you are Melano or Gemea.
 - **Core loop:**
   - 20 days, 2 actions per day.
   - Outsiders arrive and the village trusts them by default. Read them with your senses, then welcome, refuse or confront.

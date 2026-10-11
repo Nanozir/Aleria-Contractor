@@ -1008,7 +1008,7 @@ export default function App(){
       {id:"tetrabrachian",accent:"#e85c3a",title:"Tetrabrachian",line:"Four-armed, calm, enormous.",flavor:"Wields two weapons. No spells. The Colosseum awaits after the Doomsday.",tags:[["+15 HP","#e85c3a"],["+3 ATK","#e0a523"],["Dual wield","#7b6fe4"]]},
       {id:"tenebrim",accent:"#b83a2a",title:"Tenebrim",line:"Coreless. Unbreakable.",flavor:"A survival campaign in Menfor: escape a slave pact or leave your clan, and break the Syndicate's fort.",tags:[["Scenario","#ff8c42"],["No mana","#b83a2a"],["Fury","#ff4d4d"]]},
       {id:"devil",accent:"#c84838",title:"Devil",line:"Warden of the Underworld.",flavor:"Keep Sector Three's siphons running and delay the Doomsday from below. Veyrith, Kharvex or Syrakai.",tags:[["Scenario","#ff8c42"],["Innate spells","#a89df0"],["Beast companion","#ffb347"]]},
-      {id:"beastkin",accent:"#7fbf5a",title:"Beastkin",line:"A Hero's creation.",flavor:"One year in a trusting village that slavers have noticed. Lizardman, Angelos, Melano, Lupin or Ursan.",tags:[["Scenario","#ff8c42"],["5 sub-types","#7fbf5a"],["Wild Surge","#ff6bcb"]]},
+      {id:"beastkin",accent:"#7fbf5a",title:"Beastkin",line:"A Hero's creation.",flavor:"One year in a trusting village that slavers have noticed. Lizardman, Angelos, Canine Kin, Melano, Gemea or Ursan.",tags:[["Scenario","#ff8c42"],["6 sub-types","#7fbf5a"],["Wild Surge","#ff6bcb"]]},
       {id:"elf",accent:"#87cefa",title:"Elf",line:"The endless winter.",flavor:"A Frostpunk-style survival city-builder in the Northern Expanse.",tags:[["Scenario","#ff8c42"],["Survival","#87cefa"]]},
     ];
     return (

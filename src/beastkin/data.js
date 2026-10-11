@@ -3,7 +3,7 @@
 // keen senses and instincts, unusually potent cores but poor spell control. They live in small secluded
 // villages built on farming, foraging and sharing; they are naive, and other races treat them as soft
 // targets. The Church protects them as a Hero's creation — but that protection doesn't reach everywhere.
-// Angelos and Lizardmen come from the Races lore. Melano, Lupin and Ursan are new sub-types for the game.
+// Angelos, Lizardmen, Canine Kin, Melano and Gemea follow the author's canon. Ursan is a new sub-type for the game.
 
 export const SUBTYPES = {
   lizardman: {
@@ -32,32 +32,45 @@ export const SUBTYPES = {
       { id: "hymn", name: "Soothing Hymn", heal: 0.22, mpCost: 20, isSpell: true, desc: "Heal 22%." },
     ],
   },
-  melano: {
-    name: "Melano", color: "#9a8cff", lore: false,
-    look: "Melanistic, panther-like: black fur, gold eyes that catch the dark. The night-watch of beastkin villages.",
-    blurb: "A night hunter. Patrols at night are yours; ambushes, crits and shadow-pounces.",
-    stats: { hp: 105, atk: 8, def: 3, dodge: 14, mp: 40, senses: 3 },
-    perks: ["Night patrols ambush more often", "+12% crit", "Shadow Pounce ignores armor", "Raking Claws: three quick hits"],
-    actions: [
-      { id: "swipe", name: "Swipe", dmg: [5, 11], desc: "Fast and quiet." },
-      { id: "rake", name: "Raking Claws", dmg: [5, 8], hits: 3, staminaCost: 16, desc: "Three slashes." },
-      { id: "pounce", name: "Shadow Pounce", dmg: [16, 26], staminaCost: 22, armorPierce: true, desc: "From the dark. Ignores armor." },
-    ],
-  },
-  lupin: {
-    name: "Lupin", color: "#c8b48a", lore: false,
-    look: "Wolf-eared, grey-furred, never truly alone. Trackers and herders.",
-    blurb: "You hunt as a pack: packmates fight beside you, and you can track anyone who goes missing.",
-    stats: { hp: 115, atk: 6, def: 4, dodge: 8, mp: 35, senses: 2 },
-    perks: ["+1 packmate ally in every fight", "Track missing villagers", "Bite causes bleeding", "Alpha Howl: hits all, breaks poise"],
+  canine: {
+    name: "Canine Kin", color: "#c8b48a", lore: true,
+    look: "Canine ears and tail, a nose that never stops working. Heavily instinct-driven; not much for thinking things through.",
+    blurb: "The strongest sense of smell in the valley: you read outsiders and follow trails better than anyone. Your packmates fight beside you. Your instincts run your core, too — Wild Surge is even wilder.",
+    stats: { hp: 115, atk: 6, def: 4, dodge: 8, mp: 30, senses: 4 },
+    perks: ["Best nose: read outsiders & track the missing", "+1 packmate ally in every fight", "Bite causes bleeding", "Instinct over thought: Wild Surge backfires 25%"],
     actions: [
       { id: "bite", name: "Bite", dmg: [5, 11], effect: "bleed", desc: "Bleeds." },
       { id: "flank", name: "Pack Flank", dmg: [12, 18], staminaCost: 16, poise: 3, desc: "You and the pack hit together." },
-      { id: "howl", name: "Alpha Howl", dmg: [6, 10], staminaCost: 26, aoe: true, poise: 4, desc: "Hits every enemy. Breaks poise." },
+      { id: "howl", name: "Howl & Rush", dmg: [6, 10], staminaCost: 26, aoe: true, poise: 4, desc: "Hits every enemy. Breaks poise." },
+    ],
+  },
+  melano: {
+    name: "Melano", color: "#9a5a4a", lore: true,
+    look: "Dark-skinned, tall and heavily muscled, with a minotaur's horns, hooves, legs and fur. Aggressive by nature. Melano cannot speak.",
+    blurb: "Most Melano roam the highlands in bands; you were raised in Hollowmere instead. You are the strongest thing in the valley — and you have no words. The Gemea still flinch when you pass.",
+    stats: { hp: 145, atk: 10, def: 5, dodge: 2, mp: 25, senses: 2 },
+    perks: ["Highest ATK and HP", "Gore & Trample break poise", "Cannot speak: you bellow instead of arguing", "Village trust starts lower; the heat season tests you"],
+    actions: [
+      { id: "horns", name: "Horn Hook", dmg: [7, 13], desc: "A short, brutal hook of the horns." },
+      { id: "gore", name: "Gore Charge", dmg: [18, 28], staminaCost: 24, poise: 6, effect: "bleed", desc: "Head down, full charge. Bleeds, huge stagger." },
+      { id: "trample", name: "Trample", dmg: [10, 16], staminaCost: 26, aoe: true, poise: 3, desc: "Hooves over everything in front of you." },
+      { id: "bellow", name: "Bellow", dmg: [2, 4], staminaCost: 14, aoe: true, effect: "stun", effectChance: 0.45, desc: "A wordless roar. May stun everything." },
+    ],
+  },
+  gemea: {
+    name: "Gemea", color: "#e8dcc8", lore: true,
+    look: "Goat horns, fluffy wool on the hips and in the hair, a frail build. Passive, easily frightened. Mountain folk.",
+    blurb: "Fragile and fearful — which keeps you alive. You notice everything, you know the mountain paths, and you're quick to bolt. Every summer, Melano bands come looking for Gemea.",
+    stats: { hp: 80, atk: 3, def: 2, dodge: 24, mp: 45, senses: 3 },
+    perks: ["Skittish: +24% dodge, always alert", "Mountain forager: more herbs", "Hoof Kick can stun", "The Melano heat season hunts you"],
+    actions: [
+      { id: "ram", name: "Ram", dmg: [4, 9], poise: 3, desc: "Horns first. Breaks poise." },
+      { id: "kick", name: "Hoof Kick", dmg: [6, 12], staminaCost: 14, effect: "stun", effectChance: 0.4, desc: "Panic-strength kick. May stun." },
+      { id: "wool", name: "Huddle", heal: 0.14, cleanse: true, staminaCost: 15, desc: "Curl up in your wool: heal 14%, shake off afflictions." },
     ],
   },
   ursan: {
-    name: "Ursan", color: "#c88a5a", lore: false,
+    name: "Ursan", color: "#c88a5a", lore: false, // invented for the game, not in the lore doc
     look: "Bear-kin. Broad, slow to anger, the village's strongest back at harvest.",
     blurb: "Enormous strength and endurance. Fields yield more with you in them; in winter you can hibernate to heal.",
     stats: { hp: 155, atk: 9, def: 6, dodge: 0, mp: 25, senses: 1 },
@@ -82,8 +95,8 @@ export const NOTABLES = [
   { id: "moss", name: "Elder Moss", kind: "Ursan", desc: "Keeps the seed-stores and the old stories." },
   { id: "sela", name: "Sela", kind: "Angelos", desc: "The village healer. Sings while she works." },
   { id: "kesh", name: "Kesh", kind: "Lizardman", desc: "The best hunter in Hollowmere. Doesn't talk much." },
-  { id: "rook", name: "Rook", kind: "Lupin", desc: "Herds the goats. Knows every path in the woods." },
-  { id: "pip", name: "Pip", kind: "Melano", desc: "A cub who follows you everywhere." },
+  { id: "rook", name: "Rook", kind: "Canine Kin", desc: "Herds the goats. Can smell a stranger a valley away." },
+  { id: "pip", name: "Pip", kind: "Gemea", desc: "A skittish Gemea kid who follows you everywhere anyway." },
 ];
 
 export const BUILDINGS = {
@@ -108,6 +121,15 @@ export const BK_ENEMIES = {
       { id: "dart", name: "Sedative Dart", kind: "attack", mult: [0.5, 0.7], pierce: true, status: { type: "weaken", turns: 2 }, tell: "Raises a blowpipe. (Unblockable)" },
       { id: "net", name: "Throw Net", kind: "attack", mult: [0.4, 0.6], status: { type: "stun", turns: 1 }, tell: "Spins a net overhead." },
       { id: "knife", name: "Knife", kind: "attack", mult: [0.9, 1.2], tell: "Draws a skinning knife." },
+    ] },
+  melano: { id: "b_melano", name: "Melano bull", star: 3, hp: 120, atk: 17, def: 6, poise: 8, reward: { xp: 0, bronze: 0 },
+    desc: "Horns, hooves, and the heat season in its eyes. It doesn't speak. None of them do.",
+    traits: ["enrage"],
+    moves: [
+      { id: "paw", name: "Paw the Ground", kind: "charge", tell: "It lowers its horns and paws the earth…", next: "charge" },
+      { id: "charge", name: "Bull Charge", kind: "heavy", mult: [1.7, 2.1], tell: "It charges!", hidden: true },
+      { id: "gore", name: "Gore", kind: "attack", mult: [0.9, 1.2], status: { type: "bleed", turns: 2, power: 4 }, tell: "Hooks with its horns." },
+      { id: "bellow", name: "Bellow", kind: "attack", mult: [0.4, 0.6], sweep: true, status: { type: "stun", turns: 1 }, tell: "Its chest swells — a deafening bellow is coming. (Sweep)" },
     ] },
   orlen: { id: "b_orlen", name: "Factor Orlen", star: 4, hp: 220, atk: 22, def: 10, poise: 10, reward: { xp: 0, bronze: 0 },
     desc: "Still smiling. He always smiles. A Skill-crystal glows in his cane.",

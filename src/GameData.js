@@ -15,7 +15,7 @@ export const RACES=[
     locked: false
   },
   {id:"devil",name:"Devil",locked:false,desc:"Starts in the Underworld.",flavor:"Innate elemental spells.",hpBonus:5,atkBonus:2,defBonus:1,dodge:8,mpBonus:40,canSpell:true},
-  {id:"beastkin",name:"Beastkin",locked:false,desc:"A Hero's creation. Choose a sub-type: Lizardman, Angelos, Melano, Lupin or Ursan.",flavor:"Keen senses, potent cores, poor control.",hpBonus:10,atkBonus:2,defBonus:2,dodge:10,mpBonus:0,canSpell:true},
+  {id:"beastkin",name:"Beastkin",locked:false,desc:"A Hero's creation. Choose a sub-type: Lizardman, Angelos, Canine Kin, Melano, Gemea or Ursan.",flavor:"Keen senses, potent cores, poor control.",hpBonus:10,atkBonus:2,defBonus:2,dodge:10,mpBonus:0,canSpell:true},
   {
     id: "elf",
     name: "Elf",
