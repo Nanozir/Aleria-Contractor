@@ -6,6 +6,8 @@ import CombatScreen from "./combat/CombatScreen";
 import Cinematic from "./cinematic/Cinematic";
 import { makeEnemy } from "./combat/engine";
 import { elfEnemyTemplate, elfActions } from "./elf/enemies";
+import FrostWorld from "./elf/FrostWorld";
+import "./elf/elf.css";
 
 export default function ElfScenario({ setScreen, notify, stats, setStats, diff }) {
   const playClick = () => { if (window.SFX && window.SFX.click) window.SFX.click(); };
@@ -354,6 +356,12 @@ const OBJECTIVES = [
   const finishTownCinematic = () => { setPhase("outpost"); addLog("Town established. Population mechanics unlocked.", "reward"); setPopulation(15); setCitizens(Array.from({length: 15}, () => generateCitizen())); };
   const finishGiantCutscene = () => { setPhase("outpost"); setGiantPhase(1); setPopulation(p => Math.floor(p / 2)); setTownProgress(p => p + 1); addLog("Half the town was crushed. Skyspine schematics recovered.", "dmg"); };
 
+  useEffect(() => {
+    if (!activeEvent?.fast) return;
+    const h = (e) => { if (e.key === "Escape") setActiveEvent(null); };
+    window.addEventListener("keydown", h); return () => window.removeEventListener("keydown", h);
+  }, [activeEvent]);
+
   // --- GIANT QTE MECHANICS ---
   // The giant telegraphs each attack; the player has to read it and pick the right evasion.
   const GIANT_MOVES = [
@@ -628,7 +636,7 @@ const OBJECTIVES = [
         title: "Wandering Survivor",
         desc: "You find a half-frozen elf clutching a scrap of ancient tech. They beg for food.",
         choices: [
-          { label: "Give Ration (-1 Ration)", req: rations >= 1, color: "normal", action: () => { 
+          { label: "Give Ration (-1 Ration)", req: rations >= 1, need: "Needs 1 Ration", color: "normal", action: () => { 
               playClick(); setRations(r=>r-1); 
               if (intent < 0.3) { setArtifacts(a => Math.max(0, a - 2)); addLog("They stole 2 Artifacts and fled!", "dmg"); }
               else if (intent < 0.6) { setEngineers(e => e + 1); setPopulation(p=>p+1); addLog("A Federation Engineer joins you!", "reward"); }
@@ -657,15 +665,15 @@ const OBJECTIVES = [
         choices: [
           { label: "Allow it (+Hunt skill, +5 Morale)", req: true, color: "normal", action: () => { playClick(); setCitizens(prev => prev.map(c => c.id === citizen.id ? { ...c, job: "hunt", skills: { ...c.skills, hunt: Math.min(5, (c.skills?.hunt || 1) + 1) }, relationship: (c.relationship || 50) + 10 } : c)); changeMorale(5, `${citizen.name} found purpose.`); setActiveEvent(null); } },
           { label: "Refuse (-5 Morale, resentment chance)", req: true, color: "danger", action: () => { playClick(); setCitizens(prev => prev.map(c => c.id === citizen.id ? { ...c, resentment: (c.resentment || 0) + 15, relationship: (c.relationship || 50) - 10 } : c)); changeMorale(-5, `${citizen.name}'s request was refused.`); setActiveEvent(null); } },
-          { label: "Train personally (50% elite / 50% injury)", req: energy >= 20, color: "normal", action: () => { playClick(); setEnergy(e => Math.max(0, e - 20)); if (Math.random() < 0.5) { setCitizens(prev => prev.map(c => c.id === citizen.id ? { ...c, job: "hunt", traits: [...new Set([...(c.traits || []), "brave"])], skills: { ...c.skills, hunt: 5 }, relationship: (c.relationship || 50) + 20 } : c)); changeMorale(8, `${citizen.name} became an elite hunter.`); } else { setHp(h => Math.max(1, h - 10)); changeMorale(-3, `${citizen.name} was injured during training.`); } setActiveEvent(null); } }
+          { label: "Train personally (50% elite / 50% injury)", req: energy >= 20, need: "Needs 20 Energy", color: "normal", action: () => { playClick(); setEnergy(e => Math.max(0, e - 20)); if (Math.random() < 0.5) { setCitizens(prev => prev.map(c => c.id === citizen.id ? { ...c, job: "hunt", traits: [...new Set([...(c.traits || []), "brave"])], skills: { ...c.skills, hunt: 5 }, relationship: (c.relationship || 50) + 20 } : c)); changeMorale(8, `${citizen.name} became an elite hunter.`); } else { setHp(h => Math.max(1, h - 10)); changeMorale(-3, `${citizen.name} was injured during training.`); } setActiveEvent(null); } }
         ]
       },
       {
         title: `${citizen.name} asks for family rations`,
         desc: `A private request reaches your desk. Compassion could build loyalty, but the stores are watched by hungry eyes.`,
         choices: [
-          { label: "Grant extra food (-15 Food, +relationship)", req: food >= 15, color: "normal", action: () => { playClick(); setFood(f => f - 15); setCitizens(prev => prev.map(c => c.id === citizen.id ? { ...c, relationship: (c.relationship || 50) + 20 } : c)); changeMorale(4, "A humane exception spread through the quarters."); setActiveEvent(null); } },
-          { label: "Make it public ration reform (-30 Food, +10 Morale)", req: food >= 30, color: "normal", action: () => { playClick(); setFood(f => f - 30); changeMorale(10, "Ration reform calmed the settlement."); addPermanentEffect("production", 0.02); setActiveEvent(null); } },
+          { label: "Grant extra food (-15 Food, +relationship)", req: food >= 15, need: "Needs 15 Food", color: "normal", action: () => { playClick(); setFood(f => f - 15); setCitizens(prev => prev.map(c => c.id === citizen.id ? { ...c, relationship: (c.relationship || 50) + 20 } : c)); changeMorale(4, "A humane exception spread through the quarters."); setActiveEvent(null); } },
+          { label: "Make it public ration reform (-30 Food, +10 Morale)", req: food >= 30, need: "Needs 30 Food", color: "normal", action: () => { playClick(); setFood(f => f - 30); changeMorale(10, "Ration reform calmed the settlement."); addPermanentEffect("production", 0.02); setActiveEvent(null); } },
           { label: "Refuse as favoritism (-relationship)", req: true, color: "danger", action: () => { playClick(); setCitizens(prev => prev.map(c => c.id === citizen.id ? { ...c, relationship: (c.relationship || 50) - 20, resentment: (c.resentment || 0) + 10 } : c)); changeMorale(-2, "The refusal was lawful, but cold."); setActiveEvent(null); } }
         ]
       },
@@ -673,8 +681,8 @@ const OBJECTIVES = [
         title: `${citizen.name} proposes a festival`,
         desc: `The settlement wants one night with music instead of storm alarms. Work will slow, but people might remember why they endure.`,
         choices: [
-          { label: "Hold festival (-20 Food, +15 Morale)", req: food >= 20, color: "normal", action: () => { playClick(); setFood(f => f - 20); addPermanentEffect("celebrations", 1); changeMorale(15, "The festival lit the frozen streets."); setActiveEvent(null); } },
-          { label: "Let workers self-organize (+5 Morale, -5 Mat)", req: materials >= 5, color: "normal", action: () => { playClick(); setMaterials(m => m - 5); changeMorale(5, "A small celebration survived on scraps."); setActiveEvent(null); } },
+          { label: "Hold festival (-20 Food, +15 Morale)", req: food >= 20, need: "Needs 20 Food", color: "normal", action: () => { playClick(); setFood(f => f - 20); addPermanentEffect("celebrations", 1); changeMorale(15, "The festival lit the frozen streets."); setActiveEvent(null); } },
+          { label: "Let workers self-organize (+5 Morale, -5 Mat)", req: materials >= 5, need: "Needs 5 Materials", color: "normal", action: () => { playClick(); setMaterials(m => m - 5); changeMorale(5, "A small celebration survived on scraps."); setActiveEvent(null); } },
           { label: "Ban distractions (+danger, -10 Morale)", req: true, color: "danger", action: () => { playClick(); addPermanentEffect("danger", 0.03); addPermanentEffect("harshRule", 1); changeMorale(-10, "The ban hardened the city."); setActiveEvent(null); } }
         ]
       }
@@ -689,7 +697,7 @@ const OBJECTIVES = [
         title: "The Cold is Unbearable",
         desc: "A delegation of frozen citizens marches to the core. 'We are freezing in our beds, Overseer. Do something!'",
         choices: [
-            { label: "Stoke the Core (-20 Coal, +8 Morale)", req: coal >= 20, color: "normal", action: () => { playClick(); setCoal(c=>c-20); setTemp(t=>Math.min(maxHeat, t+40)); changeMorale(8, "You placated the freezing citizens."); setActiveEvent(null); setTownProgress(p=>p+1); } },
+            { label: "Stoke the Core (-20 Coal, +8 Morale)", req: coal >= 20, need: "Needs 20 Coal", color: "normal", action: () => { playClick(); setCoal(c=>c-20); setTemp(t=>Math.min(maxHeat, t+40)); changeMorale(8, "You placated the freezing citizens."); setActiveEvent(null); setTownProgress(p=>p+1); } },
             { label: "Conserve Fuel (death, -15 Morale)", req: true, color: "danger", action: () => { playClick(); setCitizens(prev => prev.slice(0, -1)); setPopulation(p => Math.max(1, p-1)); changeMorale(-15, "A citizen froze to death in protest."); addBranch("cold_policy"); setActiveEvent(null); setTownProgress(p=>p+1); } }
         ]
     });
@@ -697,7 +705,7 @@ const OBJECTIVES = [
         title: "Ration Protests",
         desc: "Hunger drives the workers to strike. They demand access to the emergency stockpiles.",
         choices: [
-            { label: "Distribute Reserves (-20 Food, +8 Morale)", req: food >= 20, color: "normal", action: () => { playClick(); setFood(f=>f-20); changeMorale(8, "You fed the protesters to stop the strike."); setActiveEvent(null); setTownProgress(p=>p+1); } },
+            { label: "Distribute Reserves (-20 Food, +8 Morale)", req: food >= 20, need: "Needs 20 Food", color: "normal", action: () => { playClick(); setFood(f=>f-20); changeMorale(8, "You fed the protesters to stop the strike."); setActiveEvent(null); setTownProgress(p=>p+1); } },
             { label: "Disperse them by force (-20 Morale)", req: true, color: "danger", action: () => { playClick(); setEngineers(e => Math.max(0, e-1)); setCitizens(prev => prev.slice(0, -1)); setPopulation(p => Math.max(1, p-1)); addPermanentEffect("danger", 0.04); changeMorale(-20, "Guards dispersed the crowd. Casualties occurred."); setActiveEvent(null); setTownProgress(p=>p+1); } }
         ]
     });
@@ -727,7 +735,7 @@ const OBJECTIVES = [
         title: "Bandits Approach!",
         desc: "Armed raiders demand a portion of your stores or they'll storm the gates.",
         choices: [
-            { label: "Pay them off (-15 Mat, -10 Coal, +future danger)", req: materials >= 15 && coal >= 10, color: "normal", action: () => { playClick(); setMaterials(m=>m-15); setCoal(c=>c-10); addPermanentEffect("danger", 0.03); addLog("The bandits left with tribute. They may return.", "info"); setActiveEvent(null); setTownProgress(p=>p+1); } },
+            { label: "Pay them off (-15 Mat, -10 Coal, +future danger)", req: materials >= 15 && coal >= 10, need: "Needs 15 Mat, 10 Coal", color: "normal", action: () => { playClick(); setMaterials(m=>m-15); setCoal(c=>c-10); addPermanentEffect("danger", 0.03); addLog("The bandits left with tribute. They may return.", "info"); setActiveEvent(null); setTownProgress(p=>p+1); } },
             { label: "Fight back (Risk casualties)", req: true, color: "danger", action: () => { playClick();
                 const huntersCount = citizens.filter(c => c.job === 'hunt').length;
                 const success = Math.random() < (0.4 + huntersCount * 0.1 + (morale >= 90 ? 0.1 : 0));
@@ -751,7 +759,7 @@ const OBJECTIVES = [
         title: "Outbreak of Sickness",
         desc: "A cough spreads through the lower quarters. Without action, it could become a plague.",
         choices: [
-            { label: "Quarantine the sick (-5 Food, +5 Morale)", req: food >= 5, color: "normal", action: () => { playClick(); setFood(f=>f-5); changeMorale(5, "The sickness was contained."); setTownProgress(p=>p+2); setActiveEvent(null); } },
+            { label: "Quarantine the sick (-5 Food, +5 Morale)", req: food >= 5, need: "Needs 5 Food", color: "normal", action: () => { playClick(); setFood(f=>f-5); changeMorale(5, "The sickness was contained."); setTownProgress(p=>p+2); setActiveEvent(null); } },
             { label: "Do nothing", req: true, color: "danger", action: () => { playClick();
                 const sick = Math.floor(population * 0.2);
                 setCitizens(prev => prev.slice(0, -sick));
@@ -766,7 +774,7 @@ const OBJECTIVES = [
         title: "Corruption in the Snow",
         desc: "Black frost grows over the outer pipes. Engineers say it feeds on fear and heat.",
         choices: [
-            { label: "Purge with mana (-3 Mana, -danger, +Morale)", req: manaCrystals >= 3, color: "normal", action: () => { playClick(); setManaCrystals(m=>m-3); addPermanentEffect("danger", -0.04); changeMorale(7, "The corruption was burned clean."); setActiveEvent(null); setTownProgress(p=>p+1); } },
+            { label: "Purge with mana (-3 Mana, -danger, +Morale)", req: manaCrystals >= 3, need: "Needs 3 Mana", color: "normal", action: () => { playClick(); setManaCrystals(m=>m-3); addPermanentEffect("danger", -0.04); changeMorale(7, "The corruption was burned clean."); setActiveEvent(null); setTownProgress(p=>p+1); } },
             { label: "Harvest it (+2 Fragments, +danger)", req: true, color: "danger", action: () => { playClick(); setAncientCoreFragments(f=>f+2); addPermanentEffect("danger", 0.06); changeMorale(-6, "The harvested corruption whispered through the settlement."); setActiveEvent(null); setTownProgress(p=>p+1); } },
             { label: "Seal the district (-1 Pop, preserve resources)", req: population > 1, color: "danger", action: () => { playClick(); setCitizens(prev => prev.slice(0, -1)); setPopulation(p => Math.max(1, p-1)); changeMorale(-10, "A district was sealed with people inside."); setActiveEvent(null); setTownProgress(p=>p+1); } }
         ]
@@ -776,7 +784,7 @@ const OBJECTIVES = [
         title: "Revenge at the Gate",
         desc: "Survivors once refused by your city return with stolen rifles and a list of names.",
         choices: [
-            { label: "Negotiate restitution (-25 Food, -10 Mat)", req: food >= 25 && materials >= 10, color: "normal", action: () => { playClick(); setFood(f=>f-25); setMaterials(m=>m-10); addPermanentEffect("revenge", -0.1); changeMorale(4, "Restitution cooled an old wound."); setActiveEvent(null); setTownProgress(p=>p+1); } },
+            { label: "Negotiate restitution (-25 Food, -10 Mat)", req: food >= 25 && materials >= 10, need: "Needs 25 Food, 10 Mat", color: "normal", action: () => { playClick(); setFood(f=>f-25); setMaterials(m=>m-10); addPermanentEffect("revenge", -0.1); changeMorale(4, "Restitution cooled an old wound."); setActiveEvent(null); setTownProgress(p=>p+1); } },
             { label: "Ambush them (Hunter check)", req: true, color: "danger", action: () => { playClick(); const power = citizens.filter(c => c.job === "hunt").length * 0.08; if (Math.random() < 0.45 + power) { setIron(i=>i+8); addPermanentEffect("revenge", -0.05); changeMorale(-3, "The ambush worked, but no one celebrated."); } else { const lost = Math.min(citizens.length, 3); setCitizens(prev=>prev.slice(0, -lost)); setPopulation(p=>Math.max(1, p-lost)); changeMorale(-14, "The revenge raid broke through."); } setActiveEvent(null); setTownProgress(p=>p+1); } },
             { label: "Open the gate and apologize (+Pop, risk theft)", req: population + 3 <= maxPopulation, color: "normal", action: () => { playClick(); setPopulation(p=>p+3); setCitizens(prev=>[...prev, ...Array.from({length:3}, () => generateCitizen())]); setMaterials(m=>Math.max(0, m-15)); addPermanentEffect("revenge", -0.15); changeMorale(8, "The old grievance became new citizens."); setActiveEvent(null); setTownProgress(p=>p+1); } }
         ]
@@ -907,9 +915,9 @@ const OBJECTIVES = [
       desc: "The shaft descends below the heated levels. Better coal waits below, along with collapses no one will hear.",
       fast: true,
       choices: [
-        { label: "Safe shaft (+20 Coal, 5% collapse)", req: energy >= 10, color: "normal", action: () => resolveRiskAction("mine", 20, 0.05, 10) },
-        { label: "Risky descent (+50 Coal, 20% collapse)", req: energy >= 18, color: "normal", action: () => resolveRiskAction("mine", 50, 0.2, 18) },
-        { label: "Extreme bore (+100 Coal, 40% collapse, rare legendary loot)", req: energy >= 30, color: "danger", action: () => resolveRiskAction("mine", 100, 0.4, 30, true) }
+        { label: "Safe shaft (+20 Coal, 5% collapse)", req: energy >= 10, need: "Needs 10 Energy", color: "normal", action: () => resolveRiskAction("mine", 20, 0.05, 10) },
+        { label: "Risky descent (+50 Coal, 20% collapse)", req: energy >= 18, need: "Needs 18 Energy", color: "normal", action: () => resolveRiskAction("mine", 50, 0.2, 18) },
+        { label: "Extreme bore (+100 Coal, 40% collapse, rare legendary loot)", req: energy >= 30, need: "Needs 30 Energy", color: "danger", action: () => resolveRiskAction("mine", 100, 0.4, 30, true) }
       ]
     });
   };
@@ -950,9 +958,9 @@ const OBJECTIVES = [
       desc: "You can scrape the surface, pry open sealed rooms, or break forbidden seals around the old core conduits.",
       fast: true,
       choices: [
-        { label: "Safe excavation (+Artifacts, +1 Fragment)", req: energy >= 12, color: "normal", action: () => resolveRiskAction("ruins", 20, 0.05, 12) },
-        { label: "Aggressive excavation (+Artifacts, +1 Fragment, 20% disaster)", req: energy >= 20, color: "normal", action: () => resolveRiskAction("ruins", 35, 0.2, 20) },
-        { label: "Forbidden excavation (+Artifacts, +2 Fragments, 40% disaster)", req: energy >= 35, color: "danger", action: () => resolveRiskAction("ruins", 50, 0.4, 35, true) }
+        { label: "Safe excavation (+Artifacts, +1 Fragment)", req: energy >= 12, need: "Needs 12 Energy", color: "normal", action: () => resolveRiskAction("ruins", 20, 0.05, 12) },
+        { label: "Aggressive excavation (+Artifacts, +1 Fragment, 20% disaster)", req: energy >= 20, need: "Needs 20 Energy", color: "normal", action: () => resolveRiskAction("ruins", 35, 0.2, 20) },
+        { label: "Forbidden excavation (+Artifacts, +2 Fragments, 40% disaster)", req: energy >= 35, need: "Needs 35 Energy", color: "danger", action: () => resolveRiskAction("ruins", 50, 0.4, 35, true) }
       ]
     });
   };
@@ -964,11 +972,23 @@ const OBJECTIVES = [
       desc: "Tracks split at the snowline. Small prey is reliable. Larger prey could feed the city. Monster tracks lead toward a den.",
       fast: true,
       choices: [
-        { label: "Small prey (+25 Food, 5% injury)", req: energy >= 8, color: "normal", action: () => resolveRiskAction("hunt", 25, 0.05, 8) },
-        { label: "Large prey (+60 Food, 20% injury)", req: energy >= 18, color: "normal", action: () => resolveRiskAction("hunt", 60, 0.2 - (!isMetaDisabled && metaUpgrades.hunterInstinct ? 0.05 : 0), 18) },
-        { label: "Monster hunt (+110 Food, 40% injury)", req: energy >= 30 && tech.weapons, color: "danger", action: () => resolveRiskAction("hunt", 110, 0.4 - (!isMetaDisabled && metaUpgrades.hunterInstinct ? 0.05 : 0), 30, true) }
+        { label: "Small prey (+25 Food, 5% injury)", req: energy >= 8, need: "Needs 8 Energy", color: "normal", action: () => resolveRiskAction("hunt", 25, 0.05, 8) },
+        { label: "Large prey (+60 Food, 20% injury)", req: energy >= 18, need: "Needs 18 Energy", color: "normal", action: () => resolveRiskAction("hunt", 60, 0.2 - (!isMetaDisabled && metaUpgrades.hunterInstinct ? 0.05 : 0), 18) },
+        { label: "Monster hunt (+110 Food, 40% injury)", req: energy >= 30 && tech.weapons, need: tech.weapons ? "Needs 30 Energy" : "Needs Scrap Weaponry", color: "danger", action: () => resolveRiskAction("hunt", 110, 0.4 - (!isMetaDisabled && metaUpgrades.hunterInstinct ? 0.05 : 0), 30, true) }
       ]
     });
+  };
+
+  const scavengeOutskirts = () => {
+    playClick();
+    if (energy < 12) return notify("Too exhausted to scavenge.", "#e85c3a");
+    applyDecay(8, 12);
+    if (Math.random() < 0.15) { triggerEvent("monster"); return; }
+    const matFound = Math.floor(Math.random() * 8) + 5;
+    const vegFound = Math.floor(Math.random() * 5) + 2;
+    setMaterials(m => m + matFound);
+    setVegetables(v => v + vegFound);
+    addLog(`Scavenged the outskirts. Found ${matFound} Materials and ${vegFound} Frozen Veggies.`, "info");
   };
 
   const stokeGenerator = () => {
@@ -1157,9 +1177,9 @@ const OBJECTIVES = [
   // --- RENDER PHASES ---
   if (phase === "intro") {
     return <Cinematic onDone={() => setPhase("outpost")} shots={[
-      { text: "A biting wind cuts through heavy, unfamiliar furs.", bg: "radial-gradient(ellipse at 50% 30%, #2a3a4a 0%, #05080c 70%)", fx: ["blizzard", "fog"], color: "#e8f4ff", duration: 5000 },
-      { text: "The Northern Expanse. Once, it wasn't always winter here.", sub: "During a past Doomsday, a Star-6 monster froze the whole continent. It never thawed.", bg: "radial-gradient(ellipse at 50% 60%, #1a2a3a 0%, #03050a 70%)", fx: ["snow", "fog"], color: "#c8e0ff", duration: 6600 },
-      { text: "The Federation has gone silent. You are wandering… lost.", bg: "radial-gradient(ellipse at 50% 40%, #1a2028 0%, #020306 70%)", fx: ["blizzard"], color: "#d8e8f8", duration: 5000 },
+      { text: "A biting wind cuts through heavy, unfamiliar furs.", bg: "radial-gradient(ellipse at 50% 30%, #2a3a4a 0%, #05080c 70%)", fx: ["aurora", "ridges", "blizzard", "fog"], color: "#e8f4ff", duration: 5000 },
+      { text: "The Northern Expanse. It was not always winter here.", sub: "During a past Doomsday, a Star-6 monster froze the whole continent. It never thawed.", bg: "radial-gradient(ellipse at 50% 60%, #1a2a3a 0%, #03050a 70%)", fx: ["aurora", "ridges", "snow", "stars"], color: "#c8e0ff", duration: 6600 },
+      { text: "The Federation has gone silent. You are wandering… lost.", bg: "radial-gradient(ellipse at 50% 40%, #1a2028 0%, #020306 70%)", fx: ["ridges", "blizzard", "fog"], color: "#d8e8f8", duration: 5000 },
       { text: "Through the whiteout, a colossal shadow emerges.", bg: "radial-gradient(ellipse at 50% 70%, #2a3040 0%, #020306 70%)", fx: ["blizzard", "shake"], color: "#ffffff", duration: 4600 },
       { text: "An Ancient complex. Orange light pulses inside the frozen stone.", sub: "The elves survived by digging these up and learning what they did. So will you.", bg: "radial-gradient(circle at 50% 55%, #6a3008 0%, #1a0c04 30%, #020306 70%)", fx: ["snow", "pulse"], color: "#ff9a3a", duration: 6400 },
     ]} />;
@@ -1167,7 +1187,7 @@ const OBJECTIVES = [
 
   if (phase === "town_cinematic") {
     return <Cinematic onDone={finishTownCinematic} shots={[
-      { text: "Months later…", bg: "radial-gradient(ellipse at 50% 50%, #1a2a3a 0%, #03050a 70%)", fx: ["snow"], color: "#c8e0ff", duration: 3600 },
+      { text: "Months later…", bg: "radial-gradient(ellipse at 50% 50%, #1a2a3a 0%, #03050a 70%)", fx: ["aurora", "ridges", "snow"], color: "#c8e0ff", duration: 3600 },
       { text: "Through sweat, blood and Ancient blueprints, the ruins have become a settlement.", sub: "Fifteen survivors answered the generator's light.", bg: "radial-gradient(circle at 50% 60%, #6a3008 0%, #1a0c04 35%, #020306 75%)", fx: ["snow", "pulse"], color: "#ffc890", duration: 6000 },
       { text: "The core breathes. The ice retreats — a little.", bg: "radial-gradient(circle at 50% 50%, #ff9a3a 0%, #4a2008 25%, #020306 70%)", fx: ["pulse", "embers"], color: "#ffe0b0", duration: 4800 },
     ]} />;
@@ -1186,7 +1206,7 @@ const OBJECTIVES = [
   if (phase === "victory_anim") {
     return <Cinematic onDone={() => { setPhase("victory"); localStorage.removeItem("aleria_elf_save"); setScreen("main_menu"); }} shots={[
       { text: "The last giant falls. The storm… stops.", bg: "radial-gradient(ellipse at 50% 40%, #2a3a4a 0%, #05080c 70%)", fx: ["snow"], color: "#e8f4ff", duration: 4800 },
-      { text: "For the first time in living memory, there is sun on the Northern Expanse.", bg: "radial-gradient(circle at 50% 20%, #fff8d0 0%, #87cefa 25%, #0a1828 70%)", fx: ["rays", "motes"], color: "#fff8d0", duration: 5600 },
+      { text: "For the first time in living memory, there is sun on the Northern Expanse.", bg: "radial-gradient(circle at 50% 20%, #fff8d0 0%, #87cefa 25%, #0a1828 70%)", fx: ["aurora", "rays", "ridges", "motes"], color: "#fff8d0", duration: 5600 },
       { text: "THE ENDLESS WINTER IS OVER", sub: "You have conquered the frost.", bg: "radial-gradient(circle at 50% 40%, #3ec995 0%, #0a2a1a 35%, #020306 75%)", fx: ["flash", "rays", "motes"], color: "#3ec995", duration: 6000 },
     ]} />;
   }
@@ -1477,31 +1497,10 @@ const OBJECTIVES = [
   }
 
 return (
-    <div style={{ minHeight: "100vh", background: "radial-gradient(circle at 50% 0%, #1a2436 0%, #05080f 100%)", fontFamily: "var(--font-sans)", padding: "20px", position: "relative" }}>
-      
-      {/* ELF TUTORIAL BUTTON */}
-      <div 
-        onClick={() => { playClick(); setShowTutorial(true); }}
-        style={{ position: "fixed", bottom: 20, left: 20, width: 45, height: 45, borderRadius: "50%", background: "rgba(135,206,250,0.1)", border: "2px solid #87cefa", color: "#87cefa", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: "bold", fontFamily: "serif", cursor: "pointer", zIndex: 900, boxShadow: "0 0 15px rgba(135,206,250,0.3)" }}
-      >
-        i
-      </div>
+    <div className="elf-root" style={{ minHeight: "100vh", padding: "20px", position: "relative" }}>
+      <FrostWorld heat={maxHeat ? temp / maxHeat : 1} genOn={genOn} />
 
-      {showTutorial && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 1500, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(5px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-          <div className="frost-panel" style={{ maxWidth: 500, padding: 30, position: "relative", borderColor: "#87cefa", boxShadow: "0 0 30px rgba(135,206,250,0.2)" }}>
-            <button onClick={() => { playClick(); setShowTutorial(false); }} style={{ position: "absolute", top: 15, right: 15, background: "none", border: "none", color: "#e85c3a", fontSize: 20, cursor: "pointer" }}>✕</button>
-            <h2 style={{ color: "#87cefa", margin: "0 0 20px", letterSpacing: "2px", textTransform: "uppercase" }}>Survival Guide</h2>
-            <p style={{ fontSize: 14, color: "rgba(255,255,255,0.8)", marginBottom: 15, lineHeight: 1.6 }}><strong>Generator:</strong> Burns Coal automatically. Keep it fueled or you freeze to death.</p>
-            <p style={{ fontSize: 14, color: "rgba(255,255,255,0.8)", marginBottom: 15, lineHeight: 1.6 }}><strong>Food:</strong> Gathered by assigned Hunters and Farmers. Raw meat and veg are combined automatically to feed citizens.</p>
-            <p style={{ fontSize: 14, color: "rgba(255,255,255,0.8)", marginBottom: 15, lineHeight: 1.6 }}><strong>Research:</strong> Use Artifacts to unlock crucial technology in the right panel.</p>
-            <p style={{ fontSize: 14, color: "rgba(255,255,255,0.8)", marginBottom: 15, lineHeight: 1.6 }}><strong>Exploration:</strong> Costs Energy and Rations. The deeper you go, the better the loot, but the greater the danger.</p>
-          </div>
-        </div>
-      )}
-      
       {/* BACKGROUND EFFECTS */}
-      <div className="snowstorm-container" style={{ pointerEvents: "none", opacity: 0.3, zIndex: 0 }}><div className="snow-layer" /></div>
 
       {/* TUTORIAL "i" BUTTON */}
       <button
@@ -1513,14 +1512,7 @@ return (
         title="Tutorial"
       >i</button>
 
-      {/* RETURN TO MAIN MENU BUTTON */}
-      <button
-        data-testid="elf-return-menu-btn"
-        onClick={() => { playClick(); if(window.confirm("Return to Main Menu? Your progress is auto-saved.")) setScreen("main_menu"); }}
-        style={{ position: "fixed", top: 20, right: 20, zIndex: 998, padding: "8px 16px", borderRadius: 20, border: "1px solid rgba(135,206,250,0.4)", background: "rgba(10,15,25,0.8)", color: "rgba(255,255,255,0.7)", fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", cursor: "pointer", transition: "all 0.2s" }}
-        onMouseOver={(e)=>{ e.currentTarget.style.color="#fff"; e.currentTarget.style.borderColor="#87cefa"; }}
-        onMouseOut={(e)=>{ e.currentTarget.style.color="rgba(255,255,255,0.7)"; e.currentTarget.style.borderColor="rgba(135,206,250,0.4)"; }}
-      >☰ Menu</button>
+
 
       {/* TUTORIAL MODAL */}
       {showTutorial && (
@@ -1561,10 +1553,10 @@ return (
       {researchAnnounce && (
         <div style={{ position: "fixed", inset: 0, display: "flex", justifyContent: "center", alignItems: "center", zIndex: 1000, pointerEvents: "auto", background: "rgba(0,0,0,0.75)", backdropFilter: "blur(4px)", perspective: "1000px" }}>
           <Confetti />
-          <div className="frost-panel" style={{ background: "rgba(10,8,16,0.98)", border: "2px solid #3ec995", padding: "38px 70px 30px", textAlign: "center", boxShadow: "0 25px 70px rgba(62,201,149,0.35), inset 0 0 20px rgba(62,201,149,0.1)", transform: "translateZ(100px)", animation: "cinFadeIn 0.35s ease-out forwards", minWidth: "520px", maxWidth: "620px", position: "relative", borderRadius: 16 }}>
+          <div className="frost-panel elf-announce" style={{ background: "rgba(10,8,16,0.98)", border: "2px solid #3ec995", textAlign: "center", boxShadow: "0 25px 70px rgba(62,201,149,0.35), inset 0 0 20px rgba(62,201,149,0.1)", animation: "cinFadeIn 0.35s ease-out forwards", position: "relative", borderRadius: 16, maxHeight: "90vh", overflowY: "auto" }}>
             <button onClick={() => { playClick(); setResearchAnnounce(null); }} style={{ position: "absolute", top: 15, right: 20, background: "transparent", color: "#3ec995", border: "none", fontSize: 24, cursor: "pointer", transition: "color 0.2s" }} onMouseOver={e=>e.currentTarget.style.color="#fff"} onMouseOut={e=>e.currentTarget.style.color="#3ec995"}>✖</button>
-            <div style={{ height: "3px", background: "linear-gradient(90deg, transparent, #3ec995, transparent)", margin: "-38px -70px 25px", boxShadow: "0 0 20px #3ec995" }} />
-            <h1 style={{ color: "#3ec995", letterSpacing: "9px", margin: "0 0 8px", fontSize: 34, textShadow: "0 0 25px #3ec995" }}>{researchAnnounce.title}</h1>
+            <div style={{ height: "3px", background: "linear-gradient(90deg, transparent, #3ec995, transparent)", margin: "-34px -28px 25px", boxShadow: "0 0 20px #3ec995" }} />
+            <h1 className="elf-title" style={{ color: "#3ec995", letterSpacing: "0.18em", margin: "0 0 8px", fontSize: "clamp(22px,4vw,32px)", textShadow: "0 0 25px #3ec995" }}>{researchAnnounce.title}</h1>
             <p style={{ color: "#fff", fontSize: 22, letterSpacing: "2.5px", margin: "0 0 22px" }}>{researchAnnounce.desc}</p>
             {researchAnnounce.boosts && researchAnnounce.boosts.length > 0 && (
               <div style={{ marginTop: 18, textAlign: "left" }}>
@@ -1577,7 +1569,7 @@ return (
                 ))}
               </div>
             )}
-            <div style={{ height: "3px", background: "linear-gradient(90deg, transparent, #3ec995, transparent)", margin: "25px -70px 25px", boxShadow: "0 0 20px #3ec995" }} />
+            <div style={{ height: "3px", background: "linear-gradient(90deg, transparent, #3ec995, transparent)", margin: "25px -28px 25px", boxShadow: "0 0 20px #3ec995" }} />
             <Btn variant="primary" onClick={() => { playClick(); setResearchAnnounce(null); }}>Acknowledge & Dismiss</Btn>
           </div>
         </div>
@@ -1626,26 +1618,27 @@ return (
         </div>
       )}
 
-      {activeEvent && (
-        <div className="frost-event-overlay">
-          <div className="frost-event-box" style={{ background: "rgba(10, 8, 16, 0.98)", border: "2px solid #a89df0", borderRadius: 16, padding: 40, boxShadow: "0 0 50px rgba(168,157,240,0.3), inset 0 0 20px rgba(168,157,240,0.1)", textAlign: "center", maxWidth: 500, animation: "cinFadeIn 0.3s ease-out" }}>
-            <h2 className="frost-event-title" style={{ color: "#a89df0", fontSize: 26, textTransform: "uppercase", letterSpacing: 3, margin: "0 0 15px" }}>{activeEvent.title}</h2>
-            <p className="frost-event-desc" style={{ color: "rgba(255,255,255,0.8)", fontSize: 16, lineHeight: 1.6, marginBottom: 20 }}>{activeEvent.desc}</p>
-            {!eventReady && (
-              <div style={{ marginBottom: 18, fontSize: 11, color: "rgba(255,217,102,0.6)", letterSpacing: 1.5 }}>
-                ⌛ Reading... please wait
-              </div>
-            )}
+      {activeEvent && (() => {
+        const anyAvailable = activeEvent.choices.some(c => c.req);
+        const canLeave = activeEvent.fast || !anyAvailable;
+        return (
+        <div className="frost-event-overlay elf-ev" onClick={(e) => { if (e.target === e.currentTarget && activeEvent.fast) { playClick(); setActiveEvent(null); } }}>
+          <div className="elf-ev-box" key={activeEvent.title + activeEvent.desc}>
+            {[...Array(10)].map((_, k) => <span key={k} className="shard" style={{ "--r": `${k * 36 + 8}deg`, animationDelay: `${k * 0.015}s` }} />)}
+            <h2 className="elf-ev-title">{activeEvent.title}</h2>
+            <p className="elf-ev-desc">{activeEvent.desc}</p>
+            {!eventReady && <div style={{ marginBottom: 14, fontSize: 11, color: "rgba(255,217,102,0.7)", letterSpacing: 1.5 }}>⌛ Reading… please wait</div>}
             <div>
               {activeEvent.choices.map((c, i) => (
-                <button key={i} data-testid={`elf-event-choice-${i}`} disabled={!c.req || !eventReady} className={`frost-choice-btn ${c.color === "danger" ? "frost-choice-danger" : ""}`} style={{ width: "100%", marginBottom: 12, padding: 15, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.2)", color: "#fff", borderRadius: 8, fontSize: 15, transition: "all 0.2s", display: "flex", justifyContent: "space-between", alignItems: "center", opacity: (c.req && eventReady) ? 1 : 0.5, cursor: (c.req && eventReady) ? "pointer" : "not-allowed" }} onClick={(c.req && eventReady) ? c.action : null}>
-                  <span>{c.label}</span>{!c.req && <span style={{ color: "#e85c3a", fontSize: 12 }}>Missing Req</span>}
+                <button key={i} data-testid={`elf-event-choice-${i}`} disabled={!c.req || !eventReady} className={`elf-ev-choice ${c.color === "danger" ? "danger" : ""}`} style={{ animationDelay: `${0.45 + i * 0.08}s` }} onClick={(c.req && eventReady) ? c.action : undefined}>
+                  <span>{c.label}</span>{!c.req && <span className="need">{c.need || "Not possible right now"}</span>}
                 </button>
               ))}
             </div>
+            {canLeave && <button data-testid="elf-event-leave" className="elf-ev-leave" style={{ animationDelay: `${0.5 + activeEvent.choices.length * 0.08}s` }} onClick={() => { playClick(); if (!activeEvent.fast) addLog("You could do nothing about it, and moved on.", "dmg"); setActiveEvent(null); }}>{activeEvent.fast ? "← Step back" : "There is nothing you can do — move on"}</button>}
           </div>
-        </div>
-      )}
+        </div>);
+      })()}
 
       <style>{`
         @keyframes critical-blink { 0% { opacity: 1; box-shadow: 0 0 15px red; } 50% { opacity: 0.6; box-shadow: 0 0 5px darkred; } 100% { opacity: 1; box-shadow: 0 0 15px red; } }
@@ -1664,44 +1657,35 @@ return (
       `}</style>
 
       {/* 3-COLUMN LAYOUT */}
-      <div style={{ display: "flex", gap: 20, maxWidth: 1400, margin: "0 auto", alignItems: "flex-start", position: "relative", zIndex: 10 }}>
+      <div className="elf-layout">
         
         {/* COLUMN 1: STICKY LEFT SIDEBAR */}
         <div className="frost-panel no-scrollbar" style={{ width: 260, position: "sticky", top: 20, padding: 20, borderRadius: 12, display: "flex", flexDirection: "column", gap: 20, maxHeight: "calc(100vh - 40px)", overflowY: "auto" }}>
            <div>
-  <h2 onClick={() => { playClick(); handleCheat(); }} title="Enter Cheat Code" style={{ margin: 0, fontSize: 20, color: "#87cefa", textTransform: "uppercase", letterSpacing: "2px", cursor: "pointer" }}>{megaCity ? "Aleria Mega-City" : (tech.settlement ? "Gorthon Settlement" : "Frozen Outpost")}</h2>
-  <p style={{ margin: "5px 0 0", fontSize: 12, color: "rgba(135, 206, 250, 0.6)" }}>Core Lvl {coreLevel} • Pop: {population}/{maxPopulation}</p>
+  <h2 className="elf-title" onClick={() => { playClick(); handleCheat(); }} title="Enter Cheat Code" style={{ margin: 0, fontSize: 19, color: "#cfeeff", textTransform: "uppercase", cursor: "pointer", textShadow: "0 0 18px rgba(140,210,255,0.5)" }}>{megaCity ? "Aleria Mega-City" : (tech.settlement ? "Gorthon Settlement" : "Frozen Outpost")}</h2>
+  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6, gap: 8 }}>
+    <p style={{ margin: 0, fontSize: 12, color: "rgba(160, 215, 255, 0.65)" }}>Core Lvl {coreLevel} • Pop: {population}/{maxPopulation}</p>
+    <button data-testid="elf-return-menu-btn" onClick={() => { playClick(); if (window.confirm("Return to Main Menu? Your progress is auto-saved.")) setScreen("main_menu"); }} style={{ padding: "4px 10px", borderRadius: 99, border: "1px solid rgba(160,215,255,0.35)", background: "rgba(4,8,16,0.6)", color: "rgba(230,242,255,0.75)", fontSize: 10.5, fontWeight: 800, letterSpacing: "0.08em", cursor: "pointer" }}>☰ MENU</button>
+  </div>
 </div>
 
-           <div style={{ display: "flex", flexDirection: "column", gap: 15 }}>
-              <div className={(temp/maxHeat) < 0.2 ? "blink-alarm" : ""} style={{ padding: 5, borderRadius: 5 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#ff8c00", fontWeight: "bold", marginBottom: 3 }}><span>HEAT</span><span>{Math.floor(temp)} / {maxHeat}</span></div>
-                <Bar val={temp} max={maxHeat} color="#ff8c00" h={10} />
-              </div>
-              <div className={(food/maxFood) < 0.2 ? "blink-alarm" : ""} style={{ padding: 5, borderRadius: 5 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#e85c3a", fontWeight: "bold", marginBottom: 3 }}><span>FOOD</span><span>{Math.floor(food)} / {maxFood}</span></div>
-                <Bar val={food} max={maxFood} color="#e85c3a" h={10} />
-              </div>
-              <div className={morale < 20 ? "blink-alarm" : ""} style={{ padding: 5, borderRadius: 5 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: morale >= 70 ? "#3ec995" : morale >= 40 ? "#ffd966" : "#e85c3a", fontWeight: "bold", marginBottom: 3 }}><span>MORALE</span><span>{Math.floor(morale)}% - {moraleBand}</span></div>
-                <Bar val={morale} max={100} color={morale >= 70 ? "#3ec995" : morale >= 40 ? "#ffd966" : "#e85c3a"} h={10} />
-              </div>
-              {phase !== "endless" && (
-                <div style={{ padding: 5 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#ff5c5c", fontWeight: "bold", marginBottom: 3 }}><span>HP</span><span>{Math.floor(hp)} / {maxHp}</span></div>
-                  <Bar val={hp} max={maxHp} color="#ff5c5c" h={10} />
-                </div>
-              )}
-              {phase !== "endless" && (
-                <div style={{ padding: 5 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#3ec995", fontWeight: "bold", marginBottom: 3 }}><span>ENERGY</span><span>{Math.floor(energy)}%</span></div>
-                  <Bar val={energy} max={100} color="#3ec995" h={10} />
-                </div>
-              )}
+           <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+              {[
+                { l: "HEAT", icon: "🔥", v: temp, m: maxHeat, c: "linear-gradient(90deg,#ff6a1a,#ffb347)", t: "#ffb347", crit: temp / maxHeat < 0.2, txt: `${Math.floor(temp)} / ${maxHeat}` },
+                { l: "FOOD", icon: "🍖", v: food, m: maxFood, c: "linear-gradient(90deg,#c8402a,#ff7a5c)", t: "#ff8a6c", crit: food / maxFood < 0.2, txt: `${Math.floor(food)} / ${maxFood}` },
+                { l: "MORALE", icon: "✦", v: morale, m: 100, c: morale >= 70 ? "linear-gradient(90deg,#1f9e6e,#5ff0b5)" : morale >= 40 ? "linear-gradient(90deg,#c89a20,#ffd966)" : "linear-gradient(90deg,#a82a1a,#ff6b4a)", t: morale >= 70 ? "#5ff0b5" : morale >= 40 ? "#ffd966" : "#ff6b4a", crit: morale < 20, txt: `${Math.floor(morale)}% · ${moraleBand}` },
+                ...(phase !== "endless" ? [
+                  { l: "HP", icon: "♥", v: hp, m: maxHp, c: "linear-gradient(90deg,#b8203a,#ff5c7a)", t: "#ff7a90", crit: hp / maxHp < 0.25, txt: `${Math.floor(hp)} / ${maxHp}` },
+                  { l: "ENERGY", icon: "⚡", v: energy, m: 100, c: "linear-gradient(90deg,#2a8fd8,#9fe0ff)", t: "#9fe0ff", crit: energy < 12, txt: `${Math.floor(energy)}%` },
+                ] : []),
+              ].map(gx => <div key={gx.l} className={`elf-gauge ${gx.crit ? "critical" : ""}`}>
+                <div className="row"><span style={{ color: gx.t }}>{gx.icon} {gx.l}</span><span style={{ color: "rgba(230,242,255,0.85)", letterSpacing: 0, fontWeight: 700 }}>{gx.txt}</span></div>
+                <div className="track"><div className="fill" style={{ width: `${Math.max(0, Math.min(100, (gx.v / gx.m) * 100))}%`, background: gx.c, boxShadow: `0 0 12px ${gx.t}88` }} /></div>
+              </div>)}
            </div>
 
            <div style={{ borderTop: "1px solid rgba(135,206,250,0.2)", paddingTop: 15, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              <Tag color="#444">Coal: {Math.floor(coal)}</Tag>
+              <Tag color="#c8c8c8">Coal: {Math.floor(coal)}</Tag>
               <Tag color="#87cefa">Mat: {materials}</Tag>
               <Tag color="#e85c3a">Meat: {meat}</Tag>
               <Tag color="#3ec995">Veg: {vegetables}</Tag>
@@ -1724,13 +1708,9 @@ return (
              </div>
           ) : (
              <>
-               <div style={{ display: "flex", gap: 10 }}>
-                 <Btn variant={leftTab === "actions" ? "primary" : "ghost"} onClick={() => { playClick(); setLeftTab("actions"); }} style={{ flex: 1 }}>Actions</Btn>
-                 <Btn variant={leftTab === "crafting" ? "primary" : "ghost"} onClick={() => { playClick(); setLeftTab("crafting"); }} style={{ flex: 1 }}>Crafting</Btn>
-                 {tech.settlement && <Btn variant={leftTab === "map" ? "primary" : "ghost"} onClick={() => { playClick(); setLeftTab("map"); }} style={{ flex: 1 }}>World Map</Btn>}
-                 {tech.settlement && <Btn variant={leftTab === "core" ? "primary" : "ghost"} onClick={() => { playClick(); setLeftTab("core"); }} style={{ flex: 1 }}>World Core</Btn>}
-                 {giantPhase >= 2 && <Btn variant={leftTab === "adv_tech" ? "primary" : "ghost"} onClick={() => { playClick(); setLeftTab("adv_tech"); }} style={{ flex: 1 }}>Advanced Tech</Btn>}
-                 <Btn variant={leftTab === "meta" ? "primary" : "ghost"} onClick={() => { playClick(); setLeftTab("meta"); }} style={{ flex: 1 }}>Echoes</Btn>
+               <div className="elf-tabs">
+                 {[["actions", "Actions", true], ["crafting", "Crafting", true], ["map", "World Map", tech.settlement], ["core", "World Core", tech.settlement], ["adv_tech", "Archon Tech", giantPhase >= 2], ["meta", "Echoes", true]].filter(t => t[2]).map(([id, label]) =>
+                   <button key={id} className={leftTab === id ? "on" : ""} onClick={() => { playClick(); setLeftTab(id); }}>{label}</button>)}
                </div>
 
                {leftTab === "core" && (
@@ -1844,30 +1824,6 @@ return (
                )}
 
                {/* TAB CONTENT: ACTIONS & BUILDINGS */}
-<div 
-  className="frost-panel" 
-  style={{ padding: 20, borderRadius: 12, cursor: "pointer", borderColor: "rgba(135,206,250,0.4)" }} 
-  onClick={() => {
-    playClick();
-    if (energy < 12) return notify("Too exhausted to scavenge.", "#e85c3a");
-    applyDecay(8, 12);
-    
-    // 15% chance to get ambushed
-    if (Math.random() < 0.15) {
-       triggerEvent("monster");
-    } else {
-       const matFound = Math.floor(Math.random() * 8) + 5; // 5 to 12 Materials
-       const vegFound = Math.floor(Math.random() * 5) + 2; // 2 to 6 Veggies
-       
-       setMaterials(m => m + matFound);
-       setVegetables(v => v + vegFound);
-       addLog(`Scavenged the outskirts. Found ${matFound} Materials and ${vegFound} Frozen Veggies.`, "info");
-    }
-  }}
->
-  <h4 style={{ color: "#87cefa", margin: "0 0 5px" }}>Scavenge Outskirts</h4>
-  <p style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>Search the perimeter for scrap metal and frozen roots. (Yields Materials & Veg)</p>
-</div>
                {leftTab === "actions" && (
   <>
     {/* NEW PROMINENT CITIZEN MANAGEMENT BANNER */}
@@ -1882,7 +1838,7 @@ return (
     )}
 
     <div className={`frost-panel ${genOn ? "core-pulse-intense" : ""}`} style={{ padding: 25, borderRadius: 12, textAlign: "center", borderColor: genOn ? "#ff8c00" : "#444" }}>
-                     <h3 style={{ color: genOn ? "#ff8c00" : "#777", margin: "0 0 10px", fontSize: 22 }}>The Central Core</h3>
+                     <h3 className="elf-title" style={{ color: genOn ? "#ffb347" : "#7a8899", margin: "0 0 10px", fontSize: 22, textShadow: genOn ? "0 0 20px rgba(255,140,40,0.6)" : "none" }}>The Central Core</h3>
                      <p style={{ fontSize: 13, color: "rgba(255,255,255,0.7)", marginBottom: 20 }}>{genOn ? `Burning ${Math.max(1, (coreLevel * 2) - (tech.heating ? 1 : 0) - genEfficiency)} Coal per tick.` : "Core is OFFLINE. Workers are idle."}</p>
                      <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
                        <Btn variant={genOn ? "danger" : "amber"} onClick={() => { playClick(); setGenOn(!genOn); }}>{genOn ? "Turn OFF (Save Coal)" : "Ignite Generator"}</Btn>
@@ -1917,30 +1873,27 @@ return (
                      </div>
                    )}
 
-                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 15 }}>
+                   <div className="elf-tiles">
                      {tech.skyspineHarness && giantPhase === 1 && (
-                       <div className="frost-panel" style={{ gridColumn: "1 / -1", padding: 20, borderRadius: 12, cursor: "pointer", borderColor: "#a89df0", background: "rgba(168,157,240,0.15)" }} onClick={fightGiants}>
-                         <h4 style={{ color: "#a89df0", margin: "0 0 5px", fontSize: 18, textAlign: "center" }}>Assault the Giants</h4>
-                         <p style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", textAlign: "center", margin: 0 }}>Costs 50 Energy, 50 Food.</p>
+                       <div className="elf-tile" style={{ gridColumn: "1 / -1", minHeight: 150, "--accent": "#c9b8ff" }} onClick={fightGiants}>
+                         <div className="bg" style={{ backgroundImage: `url(${asset("img/hazard_mitigation_icon.jpg")})` }} /><span className="cost">50 Energy · 50 Food</span>
+                         <h4 style={{ fontSize: 20 }}>Assault the Giants</h4><p>Strap into the Skyspine Harness. Mount the artillery. Fight back.</p>
                        </div>
                      )}
-                     {advTech.manaSiphon && (
-                       <div className="frost-panel" style={{ gridColumn: "1 / -1", padding: 20, borderRadius: 12, cursor: "pointer", borderColor: "#a89df0" }} onClick={() => {
-                           playClick();
-                           if(energy < 30) return notify("Not enough energy.", "#e85c3a");
-                           applyDecay(10, 30); setManaCrystals(m => m + 1);
-                           addLog("Siphoned raw anomaly energy into 1 Mana Crystal.", "reward");
-                       }}>
-                         <h4 style={{ color: "#a89df0", margin: "0 0 5px" }}>Siphon Mana</h4>
-                         <p style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>Convert 30 Energy into 1 Mana Crystal.</p>
-                       </div>
-                     )}
-                     {tech.mining && <div className="frost-panel" style={{ padding: 20, borderRadius: 12, cursor: "pointer", borderColor: "rgba(135,206,250,0.4)" }} onClick={startDeepMine}><h4 style={{ color: "#87cefa", margin: "0 0 5px" }}>Deep Mine</h4><p style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>Safe, risky, or extreme coal runs.</p></div>}
-                     <div className="frost-panel" style={{ padding: 20, borderRadius: 12, cursor: "pointer" }} onClick={startRuinsExcavation}><h4 style={{ color: "#87cefa", margin: "0 0 5px" }}>Ancient Ruins</h4><p style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>Choose excavation risk for artifacts and fragments.</p></div>
-                     <div className="frost-panel" style={{ padding: 20, borderRadius: 12, cursor: "pointer" }} onClick={startHuntingChoice}><h4 style={{ color: "#e85c3a", margin: "0 0 5px" }}>Hunting</h4><p style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>Small prey, large prey, or monster hunt.</p></div>
-                     <div className="frost-panel" style={{ padding: 20, borderRadius: 12, cursor: "pointer" }} onClick={doRest}><h4 style={{ color: "#3ec995", margin: "0 0 5px" }}>Rest</h4><p style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>Restores Energy & some HP. (-5 Food)</p></div>
-                    <div className="frost-panel" style={{ padding: 20, borderRadius: 12, cursor: rations > 0 ? "pointer" : "not-allowed", borderColor: "rgba(62,201,149,0.4)", opacity: rations > 0 ? 1 : 0.4 }} onClick={rations > 0 ? eatRation : undefined}><h4 style={{ color: "#3ec995", margin: "0 0 5px" }}>Eat Ration ({rations})</h4><p style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>+30 HP, +40 Food.</p></div>
-                     <div className="frost-panel" style={{ padding: 20, borderRadius: 12, cursor: "pointer", borderColor: "rgba(255,217,102,0.4)" }} onClick={useRawArtifact}><h4 style={{ color: "#ffd966", margin: "0 0 5px" }}>Raw Artifact</h4><p style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}><strong style={{ color: "#e85c3a" }}>High risk.</strong> Requires 1 Art.</p></div>
+                     {[
+                       { k: "scav", t: "Scavenge Outskirts", d: "Scrap metal and frozen roots from the perimeter. 15% something finds you first.", img: "material_scavenging_icon.jpg", cost: "12 Energy", accent: "#ffb347", on: scavengeOutskirts },
+                       { k: "ruins", t: "Ancient Ruins", d: "Excavate for Artifacts and Core Fragments. The deeper the seal, the worse the risk.", img: "artifact_recovery_icon.jpg", cost: "12+ Energy", accent: "#5ff0d0", on: startRuinsExcavation },
+                       { k: "hunt", t: "Hunting", d: "Small prey, large prey, or something that hunts back.", img: "hunting_lodge_icon.jpg", cost: "8+ Energy", accent: "#ff8a6c", on: startHuntingChoice },
+                       ...(tech.mining ? [{ k: "mine", t: "Deep Mine", d: "Safe, risky or extreme coal runs.", img: "mining_yield_icon.jpg", cost: "10+ Energy", accent: "#9fd8ff", on: startDeepMine }] : []),
+                       ...(advTech.manaSiphon ? [{ k: "siphon", t: "Siphon Mana", d: "Distil raw anomaly energy into a Mana Crystal.", img: "energy_efficiency_icon.jpg", cost: "30 Energy", accent: "#c9b8ff", on: () => { playClick(); if (energy < 30) return notify("Not enough energy.", "#e85c3a"); applyDecay(10, 30); setManaCrystals(m => m + 1); addLog("Siphoned raw anomaly energy into 1 Mana Crystal.", "reward"); } }] : []),
+                       { k: "rest", t: "Rest", d: "Sleep by the Core. Restores Energy and some HP.", img: "population_icon.jpg", cost: "-5 Food", accent: "#5ff0b5", on: doRest },
+                       { k: "ration", t: `Eat Ration (${rations})`, d: "+30 HP, +40 Food.", img: "farm_greenhouse_icon.jpg", cost: rations > 0 ? "1 Ration" : "None left", accent: "#5ff0b5", on: rations > 0 ? eatRation : null },
+                       { k: "raw", t: "Raw Artifact", d: "Crack one open and see what happens. High risk.", img: "hazard_mitigation_icon.jpg", cost: "1 Artifact", accent: "#ffd966", on: useRawArtifact },
+                     ].map(a => <div key={a.k} className={`elf-tile ${a.on ? "" : "disabled"}`} style={{ "--accent": a.accent }} onClick={a.on || undefined}>
+                       <div className="bg" style={{ backgroundImage: `url(${asset("img/" + a.img)})` }} />
+                       <span className="cost">{a.cost}</span>
+                       <h4>{a.t}</h4><p>{a.d}</p>
+                     </div>)}
                    </div>
                  </>
                )}
@@ -2023,7 +1976,7 @@ return (
            }`} 
            style={{ width: 320, position: "sticky", top: 20, padding: 20, borderRadius: 12, transition: "box-shadow 0.3s", maxHeight: "calc(100vh - 40px)", overflowY: "auto" }}
         >
-          <h3 style={{ color: "#a89df0", margin: "0 0 15px", borderBottom: "1px solid rgba(168,157,240,0.3)", paddingBottom: 10 }}>Research Tree</h3>
+          <h3 className="elf-title" style={{ color: "#c9b8ff", margin: "0 0 15px", borderBottom: "1px solid rgba(168,157,240,0.3)", paddingBottom: 10 }}>Research Tree</h3>
           
           <div style={{ display: "flex", flexDirection: "column", gap: 15 }}>
             <div style={{ opacity: tech.rations ? 0.5 : 1 }}>
