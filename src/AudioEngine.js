@@ -14,7 +14,7 @@ window.updateAudioVolumes = (newVols) => {
 
 // ── 1. Gamla ljudmotorn (SFX & Bossar) ──
 let actx = null;
-function aC(){if(!actx&&(window.AudioContext||window.webkitAudioContext))actx=new(window.AudioContext||window.webkitAudioContext)();return actx;}
+export function aC(){if(!actx&&(window.AudioContext||window.webkitAudioContext))actx=new(window.AudioContext||window.webkitAudioContext)();return actx;}
 
 export function tn(f,t="sine",d=0.15,v=0.1,dl=0){
   try{
