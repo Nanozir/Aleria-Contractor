@@ -91,7 +91,6 @@ function endDay(g) {
   // Scripted beats
   if (g.day === 4 && !g.flags.orlen) { g.flags.orlen = true; g.event = { id: "orlen" }; return; }
   if (g.day === 7 && !g.flags.kekali) { g.flags.kekali = true; g.event = { id: "kekali" }; return; }
-  if (g.day === 8 && !g.flags.heat) { g.flags.heat = true; g.event = { id: "heat" }; return; }
   if (g.day === 9 && !g.flags.pip) { g.flags.pip = true; g.event = { id: "pip" }; return; }
   if (g.day === 12 && !g.flags.missing) { g.flags.missing = true; g.event = { id: "missing" }; return; }
   if (seasonOf(g) === "Winter" && !g.flags.fever) { g.flags.fever = true; g.event = { id: "fever" }; return; }
@@ -133,7 +132,7 @@ export function hunt(g) {
   if (g.stamina < 15) { toast(g, "Too tired to hunt.", "#e85c3a"); return; }
   g.stamina -= 15;
   const prey = pick(seasonOf(g) === "Summer" ? ["kekali", "gasgees", "shafo"] : ["cur", "shafo", "gasgees", "blobooze"]);
-  const ambush = Math.random() < 0.35 + (g.subtype === "canine" ? 0.2 : 0);
+  const ambush = Math.random() < 0.35 + (g.subtype === "canine" ? 0.2 : 0) + (g.subtype === "gemea" ? 0.15 : 0);
   startFight(g, "hunt", [prey], { ambush, title: "THE HUNT" });
   spend(g);
 }
@@ -226,7 +225,6 @@ export function applyCombatResult(g, result, battle, diff) {
   if (result === "win") {
     if (c.kind === "hunt") { const f = irnd(6, 11); g.food += f; g.goods += 1; lines.push(`+${f} food`, "+1 goods (hides)"); }
     if (c.kind === "patrol") { g.clues += 1; g.materials += 2; lines.push("+1 clue: they carried Orlen's seal"); }
-    if (c.kind === "heat") { g.trust = clamp(g.trust + (g.subtype === "melano" ? 20 : 12)); lines.push("The band turns back toward the highlands.", g.subtype === "melano" ? "The Gemea stop flinching when you pass." : "The Gemea are safe this summer."); }
     if (c.kind === "kekali") { g.trust = clamp(g.trust + 10); g.food += 8; lines.push("The pack moves on. Trust +10"); }
     if (c.kind === "rescue") { g.flags.rescued = true; const n = Math.min(g.taken, irnd(3, 5)); g.taken -= n; g.pop += n; const back = Object.keys(g.notables).filter(k => g.notables[k] === "taken"); back.forEach(k => { g.notables[k] = "home"; }); lines.push(`${n} villagers brought home`, ...back.map(k => `${NOTABLES.find(n => n.id === k).name} is home`)); g.trust = clamp(g.trust + 15); }
     if (c.kind === "harvest1") { lines.push("The first wave breaks against you."); }
@@ -236,7 +234,6 @@ export function applyCombatResult(g, result, battle, diff) {
     else {
       g.hp = Math.max(1, Math.round(g.maxHp * 0.15));
       lines.push("You are carried home.");
-      if (c.kind === "heat") { takeGemea(g, lines); }
       if (c.kind === "harvest1" || c.kind === "harvest2") {
         const n = irnd(6, 9); g.pop -= n; g.taken += n; g.trust = clamp(g.trust - 25);
         const nt = Object.keys(g.notables).filter(k => home(g, k));
@@ -260,13 +257,6 @@ export function afterCombat(g) {
 
 function harvestScale(g) {
   return Math.max(0.7, 1 + g.spied * 0.12 - (g.built.palisade ? 0.2 : 0));
-}
-
-function takeGemea(g, lines) {
-  const n = 2; g.pop -= n; g.taken += n; g.trust = clamp(g.trust - 12);
-  const msg = "Two Gemea were carried off into the highlands. Some years, they come back.";
-  if (lines) lines.push(msg); else log(g, msg, "dmg");
-  if (home(g, "pip") && Math.random() < 0.5) { g.notables.pip = "taken"; if (lines) lines.push("Pip is gone."); else log(g, "Pip is gone.", "dmg"); }
 }
 
 // ── Events ─────────────────────────────────────────────────────────────────
@@ -319,35 +309,6 @@ export const EVENTS = {
       { label: "Move the herds inland", hint: "Food -6, no fight", run: (g) => { g.food = Math.max(0, g.food - 6); log(g, "The pack loses interest. So do the goats, in the new pasture."); } },
     ],
   }),
-  heat: (g) => {
-    const allies = alliesFor(g, (home(g, "kesh") ? 1 : 0) + (home(g, "rook") ? 1 : 0));
-    const fight = (title) => (g) => startFight(g, "heat", ["melano", "melano"], { allies, title });
-    if (g.subtype === "melano") return {
-      title: "The heat season", tone: "#9a5a4a",
-      text: "You feel it before you hear it: a pressure behind your eyes, a need to break something. Then the bellowing from the high pastures — a Melano band, come down from the highlands for the season. The Gemea know what that means. So do you. You can't tell your kind to leave. None of you have words.",
-      choices: [
-        { label: "Go up into the peaks alone until it passes", hint: "Lose two days. Trust +6 — they're grateful you stayed away. The band still prowls.", run: (g) => { g.trust = clamp(g.trust + 6); spend(g, 4); if (Math.random() < 0.5) takeGemea(g); } },
-        { label: "Stand between them and the Gemea", hint: `Fight two Melano bulls (${allies} allies). Win: trust +20.`, run: fight("YOUR OWN KIND") },
-      ],
-    };
-    if (g.subtype === "gemea") return {
-      title: "The heat season", tone: "#e8dcc8",
-      text: "Bellowing echoes down from the high pastures. The Melano heat season. Every summer, bands come down from the highlands for Gemea — and not everyone they take survives it. Your knees won't stop shaking. They'll come for you, too.",
-      choices: [
-        { label: "Hide in the high caves with the other Gemea", hint: "Food -6, lose a day. Everyone stays safe.", disabled: g.food < 6, run: (g) => { g.food -= 6; spend(g, 2); g.trust = clamp(g.trust + 4); log(g, "Two nights in the cold caves, holding each other's hands. The bellowing passes.", "heal"); } },
-        { label: "Stand your ground", hint: `Fight two Melano bulls (${allies} allies). You are not built for this.`, run: fight("THE HEAT SEASON") },
-      ],
-    };
-    return {
-      title: "The heat season", tone: "#9a5a4a",
-      text: "Bellowing from the high pastures. It's the Melano heat season: bands come down from the highlands, aggressive and wordless, and every year Gemea go missing from the mountain hamlets. Some are never found. Hollowmere's own Gemea — Pip's family among them — are terrified.",
-      choices: [
-        { label: "Hide the Gemea in the high caves", hint: "Food -6. They're safe. Trust +5", disabled: g.food < 6, run: (g) => { g.food -= 6; g.trust = clamp(g.trust + 5); log(g, "The Gemea spend two cold nights in the caves. The band passes by.", "heal"); } },
-        { label: "Stand guard at the pastures", hint: `Fight two Melano bulls (${allies} allies). Win: trust +12`, run: fight("THE HEAT SEASON") },
-        { label: "Hope they pass by", hint: "Risky", run: (g) => { if (Math.random() < 0.3) log(g, "They pass by. This year.", "info"); else takeGemea(g); } },
-      ],
-    };
-  },
   pip: (g) => ({
     title: "Pip saw something", tone: "#9a8cff",
     text: `${home(g, "pip") ? "Pip tugs your sleeve, wide-eyed. \"There were men in the old mill. They had chains that glowed. They were talking about 'the harvest'.\"" : "Pip is gone — taken. But Pip's best friend comes instead, shaking: men in the old mill, glowing chains, talk of 'the harvest'."}`,

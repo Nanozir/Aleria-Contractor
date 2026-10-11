@@ -95,7 +95,6 @@ Lore anchors: engineered by the 7th Hero, keen senses, potent cores with poor co
 
 - **Sub-types:** Lizardman, Angelos, Canine Kin, Melano and Gemea follow the author's canon. **Ursan** is a game invention.
   - Melano cannot speak: they bellow instead of confronting. The village trusts them less at first.
-  - Summer brings the **Melano heat season**: bands come down from the highlands for Gemea. You can hide them, fight, or gamble. The event plays differently if you are Melano or Gemea.
 - **Core loop:**
   - 20 days, 2 actions per day.
   - Outsiders arrive and the village trusts them by default. Read them with your senses, then welcome, refuse or confront.
