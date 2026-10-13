@@ -1,2 +1,3 @@
 // Resolves files in /public so they work both locally and on GitHub Pages (sub-path hosting).
-export const asset = (path) => `${import.meta.env.BASE_URL}${path.replace(/^\/+/, "")}`;
+// public/ is served as-is (not copied into the build), so paths keep the "public/" prefix.
+export const asset = (path) => `${import.meta.env.BASE_URL}public/${path.replace(/^\/+/, "").replace(/^public\//, "")}`;

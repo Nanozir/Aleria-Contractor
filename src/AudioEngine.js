@@ -14,7 +14,7 @@ window.updateAudioVolumes = (newVols) => {
 
 // ── 1. Gamla ljudmotorn (SFX & Bossar) ──
 let actx = null;
-function aC(){if(!actx&&(window.AudioContext||window.webkitAudioContext))actx=new(window.AudioContext||window.webkitAudioContext)();return actx;}
+export function aC(){if(!actx&&(window.AudioContext||window.webkitAudioContext))actx=new(window.AudioContext||window.webkitAudioContext)();return actx;}
 
 export function tn(f,t="sine",d=0.15,v=0.1,dl=0){
   try{
@@ -92,6 +92,16 @@ export const SFX = {
     eat: () => tn(300, "sine", 0.1, 0.1),
     encounter: () => tn(150, "sawtooth", 0.5, 0.3)
 };
+
+// Browsers block audio until the player interacts with the page. If a track was blocked
+// (e.g. the menu theme on first load), start it — and the sound-effect context — on the first click/key.
+if (typeof window !== "undefined") {
+  const unlock = () => {
+    try { const c = aC(); if (c && c.state === "suspended") c.resume(); } catch (e) {}
+    if (currentBGM && currentBGM.paused) currentBGM.play().catch(() => {});
+  };
+  ["pointerdown", "keydown", "touchstart"].forEach(ev => window.addEventListener(ev, unlock, { passive: true }));
+}
 
 // Global SFX for standard functions
 if (typeof window !== "undefined") window.SFX = SFX;
@@ -232,8 +242,9 @@ export function playRaceBGM(raceId) {
         devil: "audio/underworld_bgm.mp3",
         beastkin: "audio/beastkin_bgm.mp3",
     };
+    // Races without their own track keep the main theme rather than going silent.
     if (raceTracks[raceId]) playTrack(asset(raceTracks[raceId]), () => playTrack(asset("audio/menu_bgm.mp3")));
-    else stopBGM();
+    else playTrack(asset("audio/menu_bgm.mp3"));
 }
 
 export function playCombatBGM() {

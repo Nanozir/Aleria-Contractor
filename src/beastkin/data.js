@@ -49,7 +49,7 @@ export const SUBTYPES = {
     look: "Dark-skinned, tall and heavily muscled, with a minotaur's horns, hooves, legs and fur. Aggressive by nature. Melano cannot speak.",
     blurb: "Most Melano roam the highlands in bands; you were raised in Hollowmere instead. You are the strongest thing in the valley — and you have no words. The Gemea still flinch when you pass.",
     stats: { hp: 145, atk: 10, def: 5, dodge: 2, mp: 25, senses: 2 },
-    perks: ["Highest ATK and HP", "Gore & Trample break poise", "Cannot speak: you bellow instead of arguing", "Village trust starts lower; the heat season tests you"],
+    perks: ["Highest ATK and HP", "Gore & Trample break poise", "Cannot speak: you bellow instead of arguing", "Village trust starts lower"],
     actions: [
       { id: "horns", name: "Horn Hook", dmg: [7, 13], desc: "A short, brutal hook of the horns." },
       { id: "gore", name: "Gore Charge", dmg: [18, 28], staminaCost: 24, poise: 6, effect: "bleed", desc: "Head down, full charge. Bleeds, huge stagger." },
@@ -60,9 +60,9 @@ export const SUBTYPES = {
   gemea: {
     name: "Gemea", color: "#e8dcc8", lore: true,
     look: "Goat horns, fluffy wool on the hips and in the hair, a frail build. Passive, easily frightened. Mountain folk.",
-    blurb: "Fragile and fearful — which keeps you alive. You notice everything, you know the mountain paths, and you're quick to bolt. Every summer, Melano bands come looking for Gemea.",
+    blurb: "Fragile and fearful — which keeps you alive. You notice everything, you know the mountain paths, and you're quick to bolt.",
     stats: { hp: 80, atk: 3, def: 2, dodge: 24, mp: 45, senses: 3 },
-    perks: ["Skittish: +24% dodge, always alert", "Mountain forager: more herbs", "Hoof Kick can stun", "The Melano heat season hunts you"],
+    perks: ["Skittish: +24% dodge, always alert", "Mountain forager: more herbs", "Hoof Kick can stun", "Knows the mountain paths: hunts ambush more often"],
     actions: [
       { id: "ram", name: "Ram", dmg: [4, 9], poise: 3, desc: "Horns first. Breaks poise." },
       { id: "kick", name: "Hoof Kick", dmg: [6, 12], staminaCost: 14, effect: "stun", effectChance: 0.4, desc: "Panic-strength kick. May stun." },
@@ -121,15 +121,6 @@ export const BK_ENEMIES = {
       { id: "dart", name: "Sedative Dart", kind: "attack", mult: [0.5, 0.7], pierce: true, status: { type: "weaken", turns: 2 }, tell: "Raises a blowpipe. (Unblockable)" },
       { id: "net", name: "Throw Net", kind: "attack", mult: [0.4, 0.6], status: { type: "stun", turns: 1 }, tell: "Spins a net overhead." },
       { id: "knife", name: "Knife", kind: "attack", mult: [0.9, 1.2], tell: "Draws a skinning knife." },
-    ] },
-  melano: { id: "b_melano", name: "Melano bull", star: 3, hp: 120, atk: 17, def: 6, poise: 8, reward: { xp: 0, bronze: 0 },
-    desc: "Horns, hooves, and the heat season in its eyes. It doesn't speak. None of them do.",
-    traits: ["enrage"],
-    moves: [
-      { id: "paw", name: "Paw the Ground", kind: "charge", tell: "It lowers its horns and paws the earth…", next: "charge" },
-      { id: "charge", name: "Bull Charge", kind: "heavy", mult: [1.7, 2.1], tell: "It charges!", hidden: true },
-      { id: "gore", name: "Gore", kind: "attack", mult: [0.9, 1.2], status: { type: "bleed", turns: 2, power: 4 }, tell: "Hooks with its horns." },
-      { id: "bellow", name: "Bellow", kind: "attack", mult: [0.4, 0.6], sweep: true, status: { type: "stun", turns: 1 }, tell: "Its chest swells — a deafening bellow is coming. (Sweep)" },
     ] },
   orlen: { id: "b_orlen", name: "Factor Orlen", star: 4, hp: 220, atk: 22, def: 10, poise: 10, reward: { xp: 0, bronze: 0 },
     desc: "Still smiling. He always smiles. A Skill-crystal glows in his cane.",

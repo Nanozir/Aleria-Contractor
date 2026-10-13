@@ -1,0 +1,141 @@
+/* elf.css — Visual layer for the Elf scenario (Northern Expanse). Loaded after styles.css. */
+
+.elf-root { --ice: #9fd8ff; --ice-strong: #cfeeff; --ember: #ff9a3a; --violet: #a89df0;
+  font-family: "Inter", var(--font-sans, sans-serif); color: #eaf4ff; }
+.elf-title { font-family: "Cinzel", Georgia, serif; letter-spacing: .08em; font-weight: 700; }
+
+/* ── Backdrop ─────────────────────────────────────────────────────────── */
+.fw-root { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+.fw-sky { position: absolute; inset: 0; background:
+  radial-gradient(ellipse 120% 70% at 50% 110%, #1b2a40 0%, transparent 60%),
+  linear-gradient(180deg, #03060c 0%, #08111f 45%, #0d1a2c 75%, #0a1322 100%); }
+.fw-stars { position: absolute; top: 0; left: 0; width: 1px; height: 1px; border-radius: 50%; animation: fwTwinkle 7s ease-in-out infinite alternate; }
+@keyframes fwTwinkle { from { opacity: .55; } to { opacity: 1; } }
+.fw-aurora { position: absolute; inset: -20% -10% 35% -10%; mix-blend-mode: screen; filter: blur(60px) saturate(1.3); transition: opacity 2s; }
+.fw-aurora span { position: absolute; border-radius: 50%; }
+.fw-aurora .a1 { width: 60%; height: 55%; left: 5%; top: 15%; background: conic-gradient(from 200deg, transparent, #3ef0c0 30%, transparent 60%); animation: fwDrift1 38s ease-in-out infinite alternate; }
+.fw-aurora .a2 { width: 55%; height: 50%; left: 40%; top: 5%; background: conic-gradient(from 20deg, transparent, #8a6cff 35%, transparent 65%); animation: fwDrift2 46s ease-in-out infinite alternate; }
+.fw-aurora .a3 { width: 45%; height: 40%; left: 25%; top: 30%; background: radial-gradient(closest-side, #4aa8ff, transparent); animation: fwDrift3 31s ease-in-out infinite alternate; }
+@keyframes fwDrift1 { to { transform: translate(18%, 6%) rotate(25deg) scale(1.15); } }
+@keyframes fwDrift2 { to { transform: translate(-20%, 10%) rotate(-30deg) scale(.9); } }
+@keyframes fwDrift3 { to { transform: translate(12%, -8%) scale(1.3); } }
+.fw-ridges { position: absolute; left: -5%; width: 110%; bottom: 0; height: 46vh; }
+.fw-ridges .r1 { animation: fwRidge 90s ease-in-out infinite alternate; }
+.fw-ridges .r2 { animation: fwRidge 70s ease-in-out infinite alternate-reverse; }
+.fw-ridges .r3 { animation: fwRidge 55s ease-in-out infinite alternate; }
+@keyframes fwRidge { to { transform: translateX(-30px); } }
+.fw-core { position: absolute; left: 50%; bottom: -30vh; width: 120vw; height: 60vh; transform: translateX(-50%);
+  background: radial-gradient(ellipse at 50% 50%, rgba(255,150,60,0.75) 0%, rgba(255,90,20,0.25) 35%, transparent 65%); transition: opacity 1.5s; }
+.fw-core.on { animation: fwCorePulse 3.2s ease-in-out infinite; }
+@keyframes fwCorePulse { 0%,100% { transform: translateX(-50%) scale(1); } 50% { transform: translateX(-50%) scale(1.06); } }
+.fw-snow { position: absolute; inset: 0; width: 100%; height: 100%; }
+.fw-frost { position: absolute; inset: 0; transition: opacity 2s;
+  background:
+    radial-gradient(ellipse 75% 70% at 50% 50%, transparent 55%, rgba(190,225,255,0.35) 85%, rgba(230,245,255,0.6) 100%),
+    repeating-conic-gradient(from 0deg at 0 0, rgba(255,255,255,0.06) 0deg 2deg, transparent 2deg 9deg),
+    repeating-conic-gradient(from 0deg at 100% 100%, rgba(255,255,255,0.06) 0deg 2deg, transparent 2deg 11deg);
+  -webkit-mask-image: radial-gradient(ellipse 80% 75% at 50% 50%, transparent 50%, #000 100%);
+          mask-image: radial-gradient(ellipse 80% 75% at 50% 50%, transparent 50%, #000 100%); }
+@media (prefers-reduced-motion: reduce) {
+  .fw-aurora span, .fw-ridges g, .fw-core.on, .fw-stars { animation: none !important; }
+}
+
+/* ── Glass panels ─────────────────────────────────────────────────────── */
+.elf-root .frost-panel {
+  background: linear-gradient(160deg, rgba(40,60,90,0.42) 0%, rgba(14,22,38,0.62) 45%, rgba(8,12,22,0.78) 100%);
+  border: 1px solid rgba(160,215,255,0.22);
+  box-shadow: 0 18px 40px -18px rgba(0,0,0,0.85), inset 0 1px 0 rgba(255,255,255,0.12), inset 0 0 30px rgba(120,190,255,0.05);
+  backdrop-filter: blur(14px) saturate(1.25); -webkit-backdrop-filter: blur(14px) saturate(1.25);
+  position: relative; overflow: hidden;
+  transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease;
+}
+/* rime along the top edge instead of the old scanlines */
+.elf-root .frost-panel::before {
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 1px; pointer-events: none; z-index: 1;
+  background: linear-gradient(90deg, transparent, rgba(220,245,255,0.75), transparent);
+}
+.elf-root .frost-panel::after {
+  content: ""; position: absolute; top: -40px; right: -40px; width: 120px; height: 120px; pointer-events: none;
+  background: radial-gradient(circle, rgba(200,235,255,0.12), transparent 70%);
+}
+
+/* ── Image action tiles ───────────────────────────────────────────────── */
+.elf-tile { position: relative; min-height: 118px; border-radius: 14px; overflow: hidden; cursor: pointer; isolation: isolate;
+  border: 1px solid rgba(160,215,255,0.22); box-shadow: 0 14px 30px -16px rgba(0,0,0,0.9);
+  transition: transform .25s cubic-bezier(.2,.8,.2,1), box-shadow .25s, border-color .25s; padding: 16px 16px 14px; display: flex; flex-direction: column; justify-content: flex-end; }
+.elf-tile .bg { position: absolute; inset: 0; z-index: -2; background-size: cover; background-position: center; transform: scale(1.04); transition: transform .6s cubic-bezier(.2,.8,.2,1), filter .4s; filter: saturate(.85) brightness(.75); }
+.elf-tile::before { content: ""; position: absolute; inset: 0; z-index: -1; background: linear-gradient(180deg, rgba(4,8,16,0.1) 0%, rgba(4,8,16,0.55) 45%, rgba(4,8,16,0.94) 100%); }
+.elf-tile::after { content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none; opacity: 0;
+  background: linear-gradient(115deg, transparent 30%, rgba(220,245,255,0.18) 48%, transparent 66%); transform: translateX(-60%); transition: transform .8s ease, opacity .3s; }
+.elf-tile:hover { transform: translateY(-3px); border-color: var(--accent, rgba(160,215,255,0.6)); box-shadow: 0 20px 40px -18px rgba(0,0,0,0.95), 0 0 24px -6px var(--accent, rgba(120,200,255,0.5)); }
+.elf-tile:hover .bg { transform: scale(1.12); filter: saturate(1.1) brightness(.9); }
+.elf-tile:hover::after { opacity: 1; transform: translateX(60%); }
+.elf-tile h4 { margin: 0 0 3px; font-family: "Cinzel", Georgia, serif; font-size: 16px; letter-spacing: .06em; color: var(--accent, #cfeeff); text-shadow: 0 2px 10px rgba(0,0,0,0.9); }
+.elf-tile p { margin: 0; font-size: 11.5px; color: rgba(225,240,255,0.72); line-height: 1.45; }
+.elf-tile .cost { position: absolute; top: 10px; right: 10px; font-size: 10px; font-weight: 800; letter-spacing: .08em; padding: 3px 8px; border-radius: 99px; background: rgba(4,8,16,0.75); border: 1px solid rgba(160,215,255,0.3); color: #cfeeff; }
+.elf-tile.disabled { cursor: not-allowed; filter: grayscale(.6) brightness(.7); }
+.elf-tile.disabled:hover { transform: none; }
+
+/* ── Gauges ───────────────────────────────────────────────────────────── */
+.elf-gauge { padding: 8px 10px; border-radius: 10px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.05); }
+.elf-gauge .row { display: flex; justify-content: space-between; align-items: baseline; font-size: 11px; font-weight: 800; letter-spacing: .1em; margin-bottom: 5px; }
+.elf-gauge .track { height: 9px; border-radius: 6px; background: rgba(0,0,0,0.55); overflow: hidden; position: relative; box-shadow: inset 0 1px 3px rgba(0,0,0,0.8); }
+.elf-gauge .fill { height: 100%; border-radius: 6px; position: relative; transition: width .6s cubic-bezier(.2,.8,.2,1); }
+.elf-gauge .fill::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.45), transparent); width: 40%; animation: gaugeGlint 3.5s ease-in-out infinite; }
+@keyframes gaugeGlint { from { transform: translateX(-120%); } to { transform: translateX(320%); } }
+.elf-gauge.critical { border-color: rgba(232,92,58,0.6); animation: gaugeAlarm 1s ease-in-out infinite; }
+@keyframes gaugeAlarm { 50% { box-shadow: 0 0 16px rgba(232,92,58,0.45); } }
+
+.elf-tabs { display: flex; gap: 6px; flex-wrap: wrap; padding: 5px; border-radius: 12px; background: rgba(4,8,16,0.55); border: 1px solid rgba(160,215,255,0.15); backdrop-filter: blur(10px); }
+.elf-tabs button { flex: 1 1 auto; min-width: 96px; padding: 9px 12px; border-radius: 9px; border: 1px solid transparent; background: transparent; color: rgba(220,238,255,0.6);
+  font-family: "Cinzel", Georgia, serif; font-weight: 700; letter-spacing: .08em; font-size: 12.5px; cursor: pointer; transition: all .2s; }
+.elf-tabs button:hover { color: #fff; background: rgba(160,215,255,0.08); }
+.elf-tabs button.on { color: #fff; background: linear-gradient(180deg, rgba(120,190,255,0.28), rgba(120,190,255,0.08)); border-color: rgba(160,215,255,0.45); box-shadow: 0 0 18px -6px rgba(120,200,255,0.7); }
+
+/* ── Event dialog: "crystallize" entrance ─────────────────────────────── */
+.elf-root .frost-event-overlay, .frost-event-overlay.elf-ev {
+  background: radial-gradient(ellipse at center, rgba(10,20,40,0.6), rgba(2,4,10,0.92));
+  animation: evOverlay .45s ease-out both; backdrop-filter: blur(0px);
+}
+@keyframes evOverlay { from { opacity: 0; backdrop-filter: blur(0px); } to { opacity: 1; backdrop-filter: blur(8px); } }
+.elf-ev-box { position: relative; width: min(560px, 94vw); max-height: 90vh; overflow-y: auto; padding: 34px 30px 26px; border-radius: 18px; text-align: center;
+  background: linear-gradient(165deg, rgba(36,56,86,0.92) 0%, rgba(12,18,32,0.97) 55%, rgba(8,10,20,0.98) 100%);
+  border: 1px solid rgba(170,220,255,0.45);
+  box-shadow: 0 30px 80px -20px rgba(0,0,0,0.95), 0 0 50px -10px rgba(120,190,255,0.35), inset 0 1px 0 rgba(255,255,255,0.18);
+  animation: evCrystallize .7s cubic-bezier(.2,.9,.25,1) both; }
+/* Same vertex count on both keyframes so the polygon interpolates smoothly */
+@keyframes evCrystallize {
+  0%   { clip-path: polygon(50% 42%, 54% 50%, 50% 58%, 46% 50%, 50% 42%, 50% 42%); opacity: 0; filter: blur(6px) brightness(2); transform: scale(.9); }
+  45%  { clip-path: polygon(50% -10%, 110% 50%, 50% 110%, -10% 50%, 50% -10%, 50% -10%); opacity: 1; filter: blur(1px) brightness(1.4); }
+  100% { clip-path: polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%, 0% 0%, 0% 0%); opacity: 1; filter: none; transform: scale(1); }
+}
+.elf-ev-box::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: linear-gradient(115deg, transparent 35%, rgba(230,248,255,0.35) 50%, transparent 65%); transform: translateX(-120%); animation: evSweep 1.1s .35s ease-out both; }
+@keyframes evSweep { to { transform: translateX(120%); } }
+.elf-ev-box .shard { position: absolute; width: 10px; height: 26px; background: linear-gradient(180deg, rgba(230,248,255,0.9), rgba(140,200,255,0)); clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  top: 50%; left: 50%; opacity: 0; animation: evShard .8s ease-out both; pointer-events: none; }
+@keyframes evShard { 0% { opacity: 1; transform: translate(-50%,-50%) rotate(var(--r)) translateY(0); } 100% { opacity: 0; transform: translate(-50%,-50%) rotate(var(--r)) translateY(-240px); } }
+.elf-ev-title { font-family: "Cinzel", Georgia, serif; font-size: 26px; letter-spacing: .2em; color: #dff3ff; margin: 0 0 12px; text-shadow: 0 0 22px rgba(140,210,255,0.6);
+  animation: evTitle .9s .2s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes evTitle { from { letter-spacing: .6em; opacity: 0; filter: blur(4px); } to { letter-spacing: .2em; opacity: 1; filter: none; } }
+.elf-ev-desc { color: rgba(225,240,255,0.82); font-size: 15px; line-height: 1.7; margin: 0 0 20px; animation: evRise .5s .35s ease-out both; }
+.elf-ev-choice { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 12px; text-align: left; margin-bottom: 10px; padding: 13px 16px; border-radius: 11px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.02)); border: 1px solid rgba(170,220,255,0.25); color: #fff; font-size: 14.5px; cursor: pointer;
+  transition: transform .18s, border-color .18s, background .18s, box-shadow .18s; animation: evRise .45s ease-out both; }
+.elf-ev-choice:hover:not(:disabled) { transform: translateX(4px); border-color: #9fd8ff; background: rgba(140,200,255,0.14); box-shadow: 0 0 18px -6px rgba(140,210,255,0.7); }
+.elf-ev-choice.danger:hover:not(:disabled) { border-color: #e85c3a; background: rgba(232,92,58,0.14); box-shadow: 0 0 18px -6px rgba(232,92,58,0.7); }
+.elf-ev-choice:disabled { opacity: .5; cursor: not-allowed; }
+.elf-ev-choice .need { flex-shrink: 0; font-size: 11px; font-weight: 700; color: #ff9b85; letter-spacing: .03em; }
+.elf-ev-leave { margin-top: 6px; background: transparent; border: none; color: rgba(200,225,255,0.55); font-size: 13px; letter-spacing: .1em; cursor: pointer; padding: 8px 14px; animation: evRise .45s ease-out both; }
+.elf-ev-leave:hover { color: #fff; }
+@keyframes evRise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .elf-ev-box, .elf-ev-box::before, .elf-ev-title, .elf-ev-choice, .elf-ev-desc, .elf-ev-box .shard { animation: none !important; } }
+
+/* ── Layout helpers ───────────────────────────────────────────────────── */
+.elf-layout { display: flex; gap: 20px; max-width: 1400px; margin: 0 auto; align-items: flex-start; position: relative; z-index: 10; }
+@media (max-width: 1100px) {
+  .elf-layout { flex-direction: column; align-items: stretch; }
+  .elf-layout > .frost-panel { width: auto !important; position: relative !important; top: 0 !important; max-height: none !important; }
+}
+.elf-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }
+.elf-announce { min-width: 0 !important; width: min(620px, 94vw); padding: 34px 28px 26px !important; }

@@ -711,3 +711,11 @@ strong, b { color: var(--text); }
 .bk-year span.harvest { outline: 2px solid #e85c3a; outline-offset: 1px; }
 .link-btn { background: transparent; border: none; color: rgba(255,255,255,0.5); font-size: 14px; cursor: pointer; padding: 10px; transition: color .2s; }
 .link-btn:hover { color: #fff; }
+
+/* Cinematic: aurora + parallax ridges (Elf scenes) */
+.cin-aurora { opacity: .55; inset: -20% -10% 30% -10% !important; }
+.cin-ridges { position: absolute; left: -6%; width: 112%; bottom: 0; height: 45vh; pointer-events: none; }
+.cin-ridges .r1 { animation: cinRidge 26s ease-in-out infinite alternate; }
+.cin-ridges .r2 { animation: cinRidge 18s ease-in-out infinite alternate-reverse; }
+.cin-ridges .r3 { animation: cinRidge 12s ease-in-out infinite alternate; }
+@keyframes cinRidge { to { transform: translateX(-60px); } }

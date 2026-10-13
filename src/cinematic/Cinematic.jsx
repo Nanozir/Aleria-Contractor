@@ -69,7 +69,13 @@ export default function Cinematic({ shots, onDone, skippable = true, letterbox =
   const particleKinds = fx.filter(f => ["snow", "blizzard", "embers", "ash", "rain", "stars", "motes"].includes(f));
   return <div className={`cin-root ${fx.includes("shake") ? "cin-shake" : ""}`} onClick={next}>
     {shots.map((s, k) => <div key={k} className="cin-bg" style={{ background: s.bg || "#000", opacity: k === i ? 1 : 0 }} />)}
+    {fx.includes("aurora") && <div className="fw-aurora cin-aurora"><span className="a1" /><span className="a2" /><span className="a3" /></div>}
     {fx.includes("rays") && <div className="cin-rays" />}
+    {fx.includes("ridges") && <svg className="cin-ridges" viewBox="0 0 1600 400" preserveAspectRatio="none">
+      <path className="r1" fill="#1a2840" d="M0 260 L120 170 L210 220 L330 120 L450 210 L560 150 L690 230 L820 110 L940 200 L1060 140 L1180 230 L1300 160 L1420 220 L1600 150 L1600 400 L0 400Z" />
+      <path className="r2" fill="#0f1a2c" d="M0 300 L160 230 L280 290 L420 220 L560 300 L700 240 L860 310 L1000 230 L1150 300 L1300 240 L1460 300 L1600 250 L1600 400 L0 400Z" />
+      <path className="r3" fill="#060a12" d="M0 350 L200 300 L380 345 L560 305 L760 355 L980 310 L1180 350 L1380 315 L1600 345 L1600 400 L0 400Z" />
+    </svg>}
     {fx.includes("fog") && <div className="cin-fog" />}
     {fx.includes("pulse") && <div className="cin-pulse" style={{ background: `radial-gradient(circle, ${shot.color || "#ff8c00"}55 0%, transparent 60%)` }} />}
     {particleKinds.map(k => <Particles key={k + i} kind={k} count={k === "blizzard" ? 90 : k === "stars" ? 120 : 60} />)}
