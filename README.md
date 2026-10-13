@@ -6,21 +6,22 @@ A browser RPG set in the world of *A Guide for Heroes (Who'd Rather Not Be)*. Pi
 
 ## Play it on GitHub Pages
 
-1. On GitHub, open **Settings → Pages**.
-2. Under **Build and deployment → Source**, choose **GitHub Actions**.
-3. Push to `main` (or run the **Deploy to GitHub Pages** workflow manually from the **Actions** tab).
-4. The game is published at `https://<your-user>.github.io/Aleria-Contractor/`.
+The game is published at `https://<your-user>.github.io/Aleria-Contractor/`. It works with either **Settings → Pages → Source** option:
+- **Deploy from a branch** (`main`, root): the repo root already holds the playable build (`index.html` + `assets/`).
+- **GitHub Actions**: the **Deploy to GitHub Pages** workflow builds and publishes the site.
 
-The workflow (`.github/workflows/deploy.yml`) builds the game with Vite and deploys the `dist/` folder.
+On every push to `main`, the workflow rebuilds the game and commits the fresh `index.html` + `assets/`, so both options stay up to date.
 
 ## Run it locally
 
 ```bash
 npm install
-npm run dev      # dev server at http://127.0.0.1:5173
-npm run build    # production build into dist/
-npm run preview  # serve the production build
+npm run dev         # dev server; open http://127.0.0.1:5173/game.html
+npm run build:site  # build and refresh the playable index.html + assets/ in the repo root
 ```
+
+- `game.html` is the source entry; `index.html` and `assets/` are generated. Don't edit them by hand.
+- Music and images stay in `public/` and are loaded from there directly; nothing is copied.
 
 ## Project layout
 
